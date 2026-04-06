@@ -1,0 +1,5 @@
+(executable
+ (name test_ppx_uopt)
+ (libraries unboxed)
+ (preprocess
+  (pps ppx_uopt ppx_jane)))

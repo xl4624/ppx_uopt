@@ -1,0 +1,6 @@
+(library
+ (name ppx_uopt)
+ (kind ppx_deriver)
+ (libraries ppxlib ppxlib_jane)
+ (preprocess
+  (pps ppxlib.metaquot)))
