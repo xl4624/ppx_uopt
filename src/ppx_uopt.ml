@@ -1,16 +1,17 @@
 open Ppxlib
 open Ast_builder.Default
 
-(* Create a located longident from a string *)
-let lident ~loc s = { txt = Lident s; loc }
-
-(* Create an attribute *)
-let attr ~loc name = attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr [])
-
 (* Add [@inline] [@zero_alloc] attributes to an expression *)
 let add_inline_zero_alloc ~loc expr =
   { expr with
-    pexp_attributes = attr ~loc "inline" :: attr ~loc "zero_alloc" :: expr.pexp_attributes
+    pexp_attributes =
+      (fun ~loc name -> attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr []))
+        ~loc
+        "inline"
+      :: (fun ~loc name -> attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr []))
+           ~loc
+           "zero_alloc"
+      :: expr.pexp_attributes
   }
 ;;
 
@@ -42,7 +43,7 @@ let fun_t_default ~loc body =
 ;;
 
 (* Reference an identifier *)
-let evar ~loc s = pexp_ident ~loc (lident ~loc s)
+let evar ~loc s = pexp_ident ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc s)
 
 (* Apply a function to arguments *)
 let eapply ~loc f args = pexp_apply ~loc f (List.map (fun a -> Nolabel, a) args)
@@ -159,13 +160,13 @@ let scalar_default_none_expr ~loc = function
       (eapply
          ~loc
          (eqident ~loc [ "Float_u"; "nan" ])
-         [ pexp_construct ~loc (lident ~loc "()") None ])
+         [ pexp_construct ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "()") None ])
   | Float32_u_scalar ->
     Some
       (eapply
          ~loc
          (eqident ~loc [ "Float32_u"; "nan" ])
-         [ pexp_construct ~loc (lident ~loc "()") None ])
+         [ pexp_construct ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "()") None ])
   | Int32_u_scalar
   | Int64_u_scalar
   | Nativeint_u_scalar
@@ -187,12 +188,10 @@ let scalar_none_override_expr ~loc kind expr =
         | _ ->
           Location.raise_errorf
             ~loc
-            "ppx_uopt: int# none sentinel must be an int literal, e.g. \
-             [@@deriving unboxed_option { none = 0 }]")
+            "ppx_uopt: int# none sentinel must be an int literal, e.g. [@@deriving \
+             unboxed_option { none = 0 }]")
      | _ ->
-       Location.raise_errorf
-         ~loc
-         "ppx_uopt: none sentinel must be a constant literal")
+       Location.raise_errorf ~loc "ppx_uopt: none sentinel must be a constant literal")
   | _ -> to_unboxed_constant_expr ~loc expr
 ;;
 
@@ -205,8 +204,8 @@ let scalar_none_expr ~loc kind ~none_override =
      | None ->
        Location.raise_errorf
          ~loc
-         "ppx_uopt: %s requires a none sentinel, e.g. [@@deriving unboxed_option \
-          { none = ... }]"
+         "ppx_uopt: %s requires a none sentinel, e.g. [@@deriving unboxed_option { none \
+          = ... }]"
          (scalar_kind_name kind))
 ;;
 
@@ -251,11 +250,11 @@ let scalar_helper_items ~loc = function
         (ptyp_arrow
            ~loc
            Nolabel
-           (ptyp_constr ~loc (lident ~loc "int8#") [])
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int8#") [])
            (ptyp_arrow
               ~loc
               Nolabel
-              (ptyp_constr ~loc (lident ~loc "int8#") [])
+              (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int8#") [])
               [%type: bool]))
         "%int8#_equal"
     ]
@@ -266,11 +265,14 @@ let scalar_helper_items ~loc = function
         (ptyp_arrow
            ~loc
            Nolabel
-           (ptyp_constr ~loc (lident ~loc "int16#") [])
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int16#") [])
            (ptyp_arrow
               ~loc
               Nolabel
-              (ptyp_constr ~loc (lident ~loc "int16#") [])
+              (ptyp_constr
+                 ~loc
+                 ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int16#")
+                 [])
               [%type: bool]))
         "%int16#_equal"
     ]
@@ -278,7 +280,11 @@ let scalar_helper_items ~loc = function
     [ primitive_sig
         ~loc
         "_uopt_of_int"
-        (ptyp_arrow ~loc Nolabel [%type: int] (ptyp_constr ~loc (lident ~loc "int#") []))
+        (ptyp_arrow
+           ~loc
+           Nolabel
+           [%type: int]
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int#") []))
         "%int#_of_int"
     ; primitive_sig
         ~loc
@@ -286,11 +292,11 @@ let scalar_helper_items ~loc = function
         (ptyp_arrow
            ~loc
            Nolabel
-           (ptyp_constr ~loc (lident ~loc "int#") [])
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int#") [])
            (ptyp_arrow
               ~loc
               Nolabel
-              (ptyp_constr ~loc (lident ~loc "int#") [])
+              (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int#") [])
               [%type: bool]))
         "%int#_equal"
     ]
@@ -301,11 +307,11 @@ let scalar_helper_items ~loc = function
         (ptyp_arrow
            ~loc
            Nolabel
-           (ptyp_constr ~loc (lident ~loc "int8#") [])
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int8#") [])
            (ptyp_arrow
               ~loc
               Nolabel
-              (ptyp_constr ~loc (lident ~loc "int8#") [])
+              (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int8#") [])
               [%type: bool]))
         "%int8#_equal"
     ; primitive_sig
@@ -314,8 +320,8 @@ let scalar_helper_items ~loc = function
         (ptyp_arrow
            ~loc
            Nolabel
-           (ptyp_constr ~loc (lident ~loc "char#") [])
-           (ptyp_constr ~loc (lident ~loc "int8#") []))
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "char#") [])
+           (ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "int8#") []))
         "%identity"
     ; pstr_value
         ~loc
@@ -341,6 +347,13 @@ let scalar_helper_items ~loc = function
 
 type record_field_kind =
   | Record_field_scalar of scalar_kind
+  | Record_field_contract of Longident.t
+
+let rec string_of_longident = function
+  | Lident s -> s
+  | Ldot (lid, s) -> string_of_longident lid ^ "." ^ s
+  | Lapply _ -> assert false
+;;
 
 let classify_record_field ~loc (ld : label_declaration) =
   let field_name = ld.pld_name.txt in
@@ -349,27 +362,80 @@ let classify_record_field ~loc (ld : label_declaration) =
   | None ->
     let ct_desc = Ppxlib_jane.Shim.Core_type_desc.of_parsetree ld.pld_type.ptyp_desc in
     (match ct_desc with
-     | Ptyp_constr ({ txt = Ldot (_, "t"); _ }, []) ->
+     | Ptyp_constr ({ txt = Ldot (base, "t"); _ }, []) -> Record_field_contract base
+     | Ptyp_constr ({ txt = Ldot (base, ty_name); _ }, []) ->
        Location.raise_errorf
          ~loc
-         "ppx_uopt: unsupported field type for field '%s'. Module-qualified field types \
-          are not assumed to have an Option module; only supported unboxed scalar fields \
-          may appear in unboxed-record options."
+         "ppx_uopt: unsupported field type for field '%s'. Module-qualified contract \
+          fields must have the form %s.t and use the contract %s.Option.none : %s.t and \
+          %s.Option.is_none : %s.t -> bool."
+         field_name
+         (string_of_longident base)
+         (string_of_longident base)
+         (string_of_longident base)
+         (string_of_longident base)
+         (string_of_longident base)
+     | Ptyp_constr ({ txt = Lident ty_name; _ }, []) ->
+       let _ = ty_name in
+       Location.raise_errorf
+         ~loc
+         "ppx_uopt: unsupported field type for field '%s'. Supported unboxed-record \
+          fields are supported unboxed scalar types or module-qualified contract types \
+          of the form M.t with M.Option.none and M.Option.is_none."
          field_name
      | _ ->
        Location.raise_errorf
          ~loc
-         "ppx_uopt: unsupported field type for field '%s'. Only supported unboxed scalar \
-          fields may appear in unboxed-record options."
+         "ppx_uopt: unsupported field type for field '%s'. Supported unboxed-record \
+          fields are supported unboxed scalar types or module-qualified contract types \
+          of the form M.t with M.Option.none and M.Option.is_none."
          field_name)
 ;;
 
 let record_scalar_kinds ~loc labels =
   labels
-  |> List.map (fun ld ->
+  |> List.filter_map (fun ld ->
     match classify_record_field ~loc ld with
-    | Record_field_scalar kind -> kind)
+    | Record_field_scalar kind -> Some kind
+    | Record_field_contract _ -> None)
   |> List.sort_uniq compare_scalar_kind
+;;
+
+let contract_none_name field_name = "_uopt_contract_" ^ field_name ^ "_none"
+let contract_is_none_name field_name = "_uopt_contract_" ^ field_name ^ "_is_none"
+
+let contract_helper_items ~loc labels =
+  labels
+  |> List.concat_map (fun (ld : label_declaration) ->
+    let field_name = ld.pld_name.txt in
+    match classify_record_field ~loc ld with
+    | Record_field_scalar _ -> []
+    | Record_field_contract base ->
+      [ pstr_value
+          ~loc
+          Nonrecursive
+          [ value_binding
+              ~loc
+              ~pat:
+                (ppat_constraint
+                   ~loc
+                   (ppat_var ~loc { txt = contract_none_name field_name; loc })
+                   ld.pld_type)
+              ~expr:(eqident_lid ~loc base [ "Option"; "none" ])
+          ]
+      ; pstr_value
+          ~loc
+          Nonrecursive
+          [ value_binding
+              ~loc
+              ~pat:
+                (ppat_constraint
+                   ~loc
+                   (ppat_var ~loc { txt = contract_is_none_name field_name; loc })
+                   (ptyp_arrow ~loc Nolabel ld.pld_type [%type: bool]))
+              ~expr:(eqident_lid ~loc base [ "Option"; "is_none" ])
+          ]
+      ])
 ;;
 
 type type_info =
@@ -389,16 +455,16 @@ let detect_type_info ~loc (td : type_declaration) ~none_override =
           then
             Location.raise_errorf
               ~loc
-              "ppx_uopt: %s requires a none sentinel, e.g. [@@deriving unboxed_option \
-               { none = ... }]"
+              "ppx_uopt: %s requires a none sentinel, e.g. [@@deriving unboxed_option { \
+               none = ... }]"
               (scalar_kind_name scalar_kind);
           Scalar scalar_kind
         | None ->
           Location.raise_errorf
             ~loc
-            "ppx_uopt: unsupported type. Supported scalar types are float#, \
-             float32#, int32#, int64#/bits64, nativeint#, int8#, int16#, int#, \
-             char#, and unboxed records.")
+            "ppx_uopt: unsupported type. Supported scalar types are float#, float32#, \
+             int32#, int64#/bits64, nativeint#, int8#, int16#, int#, char#, and unboxed \
+             records.")
      | None ->
        Location.raise_errorf
          ~loc
@@ -425,7 +491,7 @@ let gen_unboxed_record_none ~loc labels ~none_override =
       List.map
         (fun (ld : label_declaration) ->
           let field_name = ld.pld_name.txt in
-          let field_lid = lident ~loc field_name in
+          let field_lid = (fun ~loc s -> { txt = Lident s; loc }) ~loc field_name in
           let field_none =
             match classify_record_field ~loc ld with
             | Record_field_scalar kind ->
@@ -438,6 +504,7 @@ let gen_unboxed_record_none ~loc labels ~none_override =
                     none sentinel for the whole record"
                    field_name
                    (scalar_kind_name kind))
+            | Record_field_contract _ -> evar ~loc (contract_none_name field_name)
           in
           field_lid, field_none)
         labels
@@ -451,14 +518,29 @@ let gen_unboxed_record_is_none ~loc labels ~none_override ~none_expr t_expr =
     List.map
       (fun (ld : label_declaration) ->
         let field_name = ld.pld_name.txt in
-        let field_lid = lident ~loc field_name in
+        let field_lid = (fun ~loc s -> { txt = Lident s; loc }) ~loc field_name in
         match classify_record_field ~loc ld with
         | Record_field_scalar kind ->
-          let field_access = pexp_unboxed_field ~loc t_expr (lident ~loc field_name) in
-          let field_none_override =
-            Option.map (fun _ -> pexp_unboxed_field ~loc none_expr field_lid) none_override
+          let field_access =
+            pexp_unboxed_field
+              ~loc
+              t_expr
+              ((fun ~loc s -> { txt = Lident s; loc }) ~loc field_name)
           in
-          scalar_is_none_body ~loc kind ~none_override:field_none_override field_access)
+          let field_none_override =
+            Option.map
+              (fun _ -> pexp_unboxed_field ~loc none_expr field_lid)
+              none_override
+          in
+          scalar_is_none_body ~loc kind ~none_override:field_none_override field_access
+        | Record_field_contract _ ->
+          let field_access =
+            pexp_unboxed_field
+              ~loc
+              t_expr
+              ((fun ~loc s -> { txt = Lident s; loc }) ~loc field_name)
+          in
+          eapply ~loc (evar ~loc (contract_is_none_name field_name)) [ field_access ])
       labels
   in
   match checks with
@@ -483,7 +565,12 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
           ~cstrs:[]
           ~kind:Ptype_abstract
           ~private_:Public
-          ~manifest:(Some (ptyp_constr ~loc (lident ~loc type_name) []))
+          ~manifest:
+            (Some
+               (ptyp_constr
+                  ~loc
+                  ((fun ~loc s -> { txt = Lident s; loc }) ~loc type_name)
+                  []))
       ]
   in
   let type_t =
@@ -497,7 +584,12 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
           ~cstrs:[]
           ~kind:Ptype_abstract
           ~private_:Public
-          ~manifest:(Some (ptyp_constr ~loc (lident ~loc "value") []))
+          ~manifest:
+            (Some
+               (ptyp_constr
+                  ~loc
+                  ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value")
+                  []))
       ]
   in
   let none_expr =
@@ -510,6 +602,11 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
     | Scalar kind -> scalar_helper_items ~loc kind
     | Unboxed_record labels ->
       record_scalar_kinds ~loc labels |> List.concat_map (scalar_helper_items ~loc)
+  in
+  let contract_items =
+    match type_info with
+    | Scalar _ -> []
+    | Unboxed_record labels -> contract_helper_items ~loc labels
   in
   let is_none_body t_expr =
     match is_none_override with
@@ -560,7 +657,9 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
   (* Build: match Stdlib.raise (Failure msg) with (_ : _uopt_empty) -> .
      where _uopt_empty is a locally-defined empty variant type.
      This is necessary for layout-polymorphic unreachable code. *)
-  let nothing_ty = ptyp_constr ~loc (lident ~loc "_uopt_empty") [] in
+  let nothing_ty =
+    ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "_uopt_empty") []
+  in
   let raise_match =
     pexp_match
       ~loc
@@ -665,6 +764,7 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
   in
   [ suppress_warnings; type_value; type_t ]
   @ helper_items
+  @ contract_items
   @ [ let_none
     ; let_some
     ; let_is_none
@@ -679,8 +779,12 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
 
 (* Generate the signature for the Option module *)
 let gen_sig_option ~loc ~type_name =
-  let t_typ = ptyp_constr ~loc (lident ~loc type_name) [] in
-  let value_typ = ptyp_constr ~loc (lident ~loc "value") [] in
+  let t_typ =
+    ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc type_name) []
+  in
+  let value_typ =
+    ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value") []
+  in
   let bool_typ = [%type: bool] in
   let mk_val name ty =
     psig_value ~loc (value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[])
@@ -707,7 +811,12 @@ let gen_sig_option ~loc ~type_name =
           ~cstrs:[]
           ~kind:Ptype_abstract
           ~private_:Public
-          ~manifest:(Some (ptyp_constr ~loc (lident ~loc "value") []))
+          ~manifest:
+            (Some
+               (ptyp_constr
+                  ~loc
+                  ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value")
+                  []))
       ]
   ; mk_val "none" value_typ
   ; mk_val "some" (ptyp_arrow ~loc Nolabel value_typ value_typ)
@@ -769,10 +878,7 @@ let args =
   empty
   +> arg
        "none"
-       Ast_pattern.(
-         as__
-           (pexp_constant drop
-            ||| pexp_record_unboxed_product drop drop))
+       Ast_pattern.(as__ (pexp_constant drop ||| pexp_record_unboxed_product drop drop))
   +> arg "is_none" Ast_pattern.__
 ;;
 
@@ -800,10 +906,7 @@ let sig_args =
   empty
   +> arg
        "none"
-       Ast_pattern.(
-         as__
-           (pexp_constant drop
-            ||| pexp_record_unboxed_product drop drop))
+       Ast_pattern.(as__ (pexp_constant drop ||| pexp_record_unboxed_product drop drop))
   +> arg "is_none" Ast_pattern.__
 ;;
 
