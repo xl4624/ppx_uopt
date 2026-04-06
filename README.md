@@ -1,7 +1,7 @@
 # ppx_uopt
 
 `ppx_uopt` derives allocation-free `Option`-style helpers for unboxed scalar types and
-unboxed records in OxCaml.
+unboxed records in OCaml.
 
 It generates an `Option` module with:
 - `none`
