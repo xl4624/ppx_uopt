@@ -12,7 +12,9 @@
   test_int16_none
   test_int_none
   test_char_none
+  test_float_sentinel_default
   test_record_literal_none
+  test_record_partial_none
   test_contract_field
   test_mixed_contract_field
   test_nested_derived_contract)

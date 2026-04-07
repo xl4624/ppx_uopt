@@ -47,6 +47,12 @@ With `none = ...`:
 - `Option.some` is the identity
 - `Option.is_none` uses sentinel checks
 
+With `sentinel = true`:
+- `Option.t = value`
+- `Option.none` is synthesized from the default sentinel for the type
+- `Option.some` is the identity
+- `Option.is_none` uses the synthesized sentinel checks
+
 ## Contract Fields
 
 A record field of type `M.t` is supported only when the generated code can rely on this
@@ -83,6 +89,12 @@ Sentinel-backed scalar:
 type token = int8# [@@deriving unboxed_option { none = #0s }]
 ```
 
+Sentinel-backed scalar using the default sentinel:
+
+```ocaml
+type token = float# [@@deriving unboxed_option { sentinel = true }]
+```
+
 Sentinel-backed record:
 
 ```ocaml
@@ -90,8 +102,20 @@ type packed_pair =
   #{ x : int8#
    ; y : int32#
    }
-[@@deriving unboxed_option { none = #{ x = #0s; y = #0l } }]
+[@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
 ```
+
+Sentinel-backed record with a partial override:
+
+```ocaml
+type packed_pair =
+  #{ x : int8#
+   ; y : float#
+   }
+[@@deriving unboxed_option { none = #{ x = #15s } }]
+```
+
+Omitted fields in a record `none = #{ ... }` override use their default sentinels.
 
 Record with a nested contract field:
 
@@ -127,7 +151,10 @@ Sentinel mode: a record option is `none` iff all checked fields are `none`
   on reserving a sentinel payload.
 - Use `none = ...` when you have a value that can be reserved as a sentinel and you
   intentionally want the more compact sentinel-backed representation.
-- Unboxed records may use `none = #{ ... }` to define a record sentinel explicitly.
+- Use `sentinel = true` when you want sentinel-backed representation with synthesized
+  default sentinels.
+- Unboxed records may use `none = #{ ... }` to define or partially override a record
+  sentinel explicitly.
 
 ## TODO
 

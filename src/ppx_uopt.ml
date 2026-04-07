@@ -477,12 +477,19 @@ type type_info =
   | Scalar of scalar_kind
   | Unboxed_record of label_declaration list
 
-let repr_kind_of_none_override = function
-  | Some _ -> Sentinel_repr
-  | None -> Tagged_repr
+let parse_bool_literal ~loc ~field_name expr =
+  let desc = Ppxlib_jane.Shim.Expression_desc.of_parsetree expr.pexp_desc ~loc in
+  match desc with
+  | Pexp_construct ({ txt = Lident "true"; _ }, None) -> true
+  | Pexp_construct ({ txt = Lident "false"; _ }, None) -> false
+  | _ -> Location.raise_errorf ~loc "ppx_uopt: %s must be a boolean literal" field_name
 ;;
 
-let detect_type_info ~loc (td : type_declaration) ~none_override:_ =
+let repr_kind_of_options ~none_override ~sentinel_override =
+  if Option.is_some none_override || sentinel_override then Sentinel_repr else Tagged_repr
+;;
+
+let detect_type_info ~loc (td : type_declaration) =
   let kind = Ppxlib_jane.Shim.Type_kind.of_parsetree td.ptype_kind in
   match kind with
   | Ptype_record_unboxed_product labels -> Unboxed_record labels
@@ -507,36 +514,67 @@ let detect_type_info ~loc (td : type_declaration) ~none_override:_ =
       "ppx_uopt: only unboxed record products and unboxed scalar types are supported"
 ;;
 
-let gen_unboxed_record_none ~loc labels ~none_override =
-  match none_override with
+let unboxed_record_none_overrides ~loc = function
+  | None -> []
   | Some expr ->
     let desc = Ppxlib_jane.Shim.Expression_desc.of_parsetree expr.pexp_desc ~loc in
     (match desc with
-     | Pexp_record_unboxed_product _ -> expr
+     | Pexp_record_unboxed_product (override_fields, None) ->
+       List.fold_left
+         (fun acc (field_lid, field_expr) ->
+           let field_name =
+             (fun ~loc -> function
+               | { txt = Lident s; _ } -> s
+               | _ ->
+                 Location.raise_errorf ~loc "ppx_uopt: expected an unqualified field name")
+               ~loc
+               field_lid
+           in
+           if List.mem_assoc field_name acc
+           then
+             Location.raise_errorf
+               ~loc
+               "ppx_uopt: duplicate none override for unboxed-record field '%s'"
+               field_name
+           else (field_name, field_expr) :: acc)
+         []
+         override_fields
+     | Pexp_record_unboxed_product (_, Some _) ->
+       Location.raise_errorf
+         ~loc
+         "ppx_uopt: unboxed-record none sentinel does not support `with`"
      | _ ->
        Location.raise_errorf
          ~loc
          "ppx_uopt: unboxed-record none sentinel must be an unboxed record literal, e.g. \
           #{ x = #0s }")
-  | None ->
+;;
+
+let gen_unboxed_record_none ~loc labels ~none_override =
+  match none_override with
+  | Some _ | None ->
+    let override_exprs = unboxed_record_none_overrides ~loc none_override in
     let fields =
       List.map
         (fun (ld : label_declaration) ->
           let field_name = ld.pld_name.txt in
           let field_lid = (fun ~loc s -> { txt = Lident s; loc }) ~loc field_name in
           let field_none =
-            match classify_record_field ~loc ld with
-            | Record_field_scalar kind ->
-              (match scalar_default_none_expr ~loc kind with
-               | Some expr -> expr
-               | None ->
-                 Location.raise_errorf
-                   ~loc
-                   "ppx_uopt: unboxed-record field '%s' of type %s requires an explicit \
-                    none sentinel for the whole record"
-                   field_name
-                   (scalar_kind_name kind))
-            | Record_field_contract _ -> evar ~loc (contract_payload_name field_name)
+            match List.assoc_opt field_name override_exprs with
+            | Some expr -> expr
+            | None ->
+              (match classify_record_field ~loc ld with
+               | Record_field_scalar kind ->
+                 (match scalar_default_none_expr ~loc kind with
+                  | Some expr -> expr
+                  | None ->
+                    Location.raise_errorf
+                      ~loc
+                      "ppx_uopt: unboxed-record field '%s' of type %s requires an \
+                       explicit none sentinel for the whole record"
+                      field_name
+                      (scalar_kind_name kind))
+               | Record_field_contract _ -> evar ~loc (contract_payload_name field_name))
           in
           field_lid, field_none)
         labels
@@ -563,12 +601,12 @@ let default_payload_expr ~loc = function
     pexp_record_unboxed_product ~loc fields None
 ;;
 
-let gen_unboxed_record_is_none_sentinel ~loc labels ~none_expr t_expr =
+let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
+  let override_exprs = unboxed_record_none_overrides ~loc none_override in
   let checks =
     List.map
       (fun (ld : label_declaration) ->
         let field_name = ld.pld_name.txt in
-        let field_lid = (fun ~loc s -> { txt = Lident s; loc }) ~loc field_name in
         let field_access =
           pexp_unboxed_field
             ~loc
@@ -577,7 +615,7 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_expr t_expr =
         in
         match classify_record_field ~loc ld with
         | Record_field_scalar kind ->
-          let field_none_override = Some (pexp_unboxed_field ~loc none_expr field_lid) in
+          let field_none_override = List.assoc_opt field_name override_exprs in
           scalar_is_none_body ~loc kind ~none_override:field_none_override field_access
         | Record_field_contract _ ->
           eapply ~loc (evar ~loc (contract_is_none_name field_name)) [ field_access ])
@@ -592,9 +630,15 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_expr t_expr =
     List.fold_left (fun acc check -> [%expr [%e acc] && [%e check]]) first rest
 ;;
 
-(* Generate the structure (implementation) for the Option module *)
-let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
-  let repr_kind = repr_kind_of_none_override none_override in
+let gen_str_option
+  ~loc
+  ~type_name
+  ~type_info
+  ~none_override
+  ~sentinel_override
+  ~is_none_override
+  =
+  let repr_kind = repr_kind_of_options ~none_override ~sentinel_override in
   (match repr_kind, is_none_override with
    | Tagged_repr, Some _ ->
      Location.raise_errorf
@@ -723,7 +767,7 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
                       gen_unboxed_record_is_none_sentinel
                         ~loc
                         labels
-                        ~none_expr:(Option.get sentinel_none_expr)
+                        ~none_override
                         (evar ~loc "t")))
               | Tagged_repr ->
                 [%expr
@@ -768,9 +812,6 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
       ]
   in
   let msg = estring ~loc (Printf.sprintf "%s.Option.value_exn: none" type_name) in
-  (* Build: match Stdlib.raise (Failure msg) with (_ : _uopt_empty) -> .
-     where _uopt_empty is a locally-defined empty variant type.
-     This is necessary for layout-polymorphic unreachable code. *)
   let nothing_ty =
     ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "_uopt_empty") []
   in
@@ -912,7 +953,7 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
 ;;
 
 (* Generate the signature for the Option module *)
-let gen_sig_option ~loc ~type_name ~none_override =
+let gen_sig_option ~loc ~type_name ~none_override ~sentinel_override =
   let manifest_typ =
     ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc type_name) []
   in
@@ -920,7 +961,7 @@ let gen_sig_option ~loc ~type_name ~none_override =
     ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value") []
   in
   let t_typ =
-    match repr_kind_of_none_override none_override with
+    match repr_kind_of_options ~none_override ~sentinel_override with
     | Sentinel_repr -> value_typ
     | Tagged_repr -> tagged_option_type ~loc
   in
@@ -1006,33 +1047,44 @@ let wrap_in_module_sig ~loc name items =
        ~type_:(pmty_signature ~loc items))
 ;;
 
-(* The deriver args: { none = <expr>; is_none = <expr> } *)
+(* The deriver args: { none = <expr>; sentinel = true; is_none = <expr> } *)
 let args =
   let open Deriving.Args in
   empty
   +> arg
        "none"
        Ast_pattern.(as__ (pexp_constant drop ||| pexp_record_unboxed_product drop drop))
+  +> arg "sentinel" Ast_pattern.__
   +> arg "is_none" Ast_pattern.__
 ;;
 
 let str_type_decl =
-  Deriving.Generator.make args (fun ~loc ~path:_ (_rec_flag, tds) none_opt is_none_opt ->
-    match tds with
-    | [ td ] ->
-      let type_name = td.ptype_name.txt in
-      let type_info = detect_type_info ~loc td ~none_override:none_opt in
-      let items =
-        gen_str_option
-          ~loc
-          ~type_name
-          ~type_info
-          ~none_override:none_opt
-          ~is_none_override:is_none_opt
-      in
-      [ wrap_in_module_str ~loc "Option" items ]
-    | _ ->
-      Location.raise_errorf ~loc "ppx_uopt: only single type declarations are supported")
+  Deriving.Generator.make
+    args
+    (fun ~loc ~path:_ (_rec_flag, tds) none_opt sentinel_opt is_none_opt ->
+       match tds with
+       | [ td ] ->
+         let type_name = td.ptype_name.txt in
+         let sentinel_override =
+           match sentinel_opt with
+           | None -> false
+           | Some expr -> parse_bool_literal ~loc ~field_name:"sentinel" expr
+         in
+         let type_info = detect_type_info ~loc td in
+         let items =
+           gen_str_option
+             ~loc
+             ~type_name
+             ~type_info
+             ~none_override:none_opt
+             ~sentinel_override
+             ~is_none_override:is_none_opt
+         in
+         [ wrap_in_module_str ~loc "Option" items ]
+       | _ ->
+         Location.raise_errorf
+           ~loc
+           "ppx_uopt: only single type declarations are supported")
 ;;
 
 let sig_args =
@@ -1041,17 +1093,25 @@ let sig_args =
   +> arg
        "none"
        Ast_pattern.(as__ (pexp_constant drop ||| pexp_record_unboxed_product drop drop))
+  +> arg "sentinel" Ast_pattern.__
   +> arg "is_none" Ast_pattern.__
 ;;
 
 let sig_type_decl =
   Deriving.Generator.make
     sig_args
-    (fun ~loc ~path:_ (_rec_flag, tds) _none_opt _is_none_opt ->
+    (fun ~loc ~path:_ (_rec_flag, tds) _none_opt sentinel_opt _is_none_opt ->
        match tds with
        | [ td ] ->
          let type_name = td.ptype_name.txt in
-         let items = gen_sig_option ~loc ~type_name ~none_override:_none_opt in
+         let sentinel_override =
+           match sentinel_opt with
+           | None -> false
+           | Some expr -> parse_bool_literal ~loc ~field_name:"sentinel" expr
+         in
+         let items =
+           gen_sig_option ~loc ~type_name ~none_override:_none_opt ~sentinel_override
+         in
          [ wrap_in_module_sig ~loc "Option" items ]
        | _ ->
          Location.raise_errorf
