@@ -1,11 +1,11 @@
-type scalar_value = float# [@@deriving unboxed_option]
-
-module Scalar_value_option = Option
+module Scalar_value = struct
+  type t = float# [@@deriving unboxed_option]
+end
 
 let () =
   let raised =
     try
-      let _ = Scalar_value_option.value_exn Scalar_value_option.none in
+      let _ = Scalar_value.Option.value_exn Scalar_value.Option.none in
       false
     with
     | Failure _ -> true

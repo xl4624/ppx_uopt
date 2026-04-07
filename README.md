@@ -116,6 +116,9 @@ type packed_pair =
 ```
 
 Omitted fields in a record `none = #{ ... }` override use their default sentinels.
+In this example the synthesized `none` value is `#{ x = #15s; y = Float_u.nan () }`.
+`Option.is_none` must still check both fields, so `#{ x = #15s; y = #7.0 }` is `some`,
+not `none`.
 
 Record with a nested contract field:
 
@@ -143,7 +146,9 @@ See more examples in [test/](./test/).
 
 Tagged mode: a record option is `none` only when its outer tag is `false`
 
-Sentinel mode: a record option is `none` iff all checked fields are `none`
+Sentinel mode: a record option is `none` iff every field matches that field's sentinel.
+With `none = #{ ... }`, explicitly listed fields use the provided values and omitted fields
+still use their synthesized default sentinels.
 
 ## Notes
 

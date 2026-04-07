@@ -15,22 +15,22 @@ module Local_field = struct
   end
 end
 
-type nested_contract = #{ x : Local_field.t } [@@deriving unboxed_option]
-
-module Nested_contract_option = Option
+module Nested_contract = struct
+  type t = #{ x : Local_field.t } [@@deriving unboxed_option]
+end
 
 let () =
-  assert (Nested_contract_option.is_none Nested_contract_option.none);
+  assert (Nested_contract.Option.is_none Nested_contract.Option.none);
   assert (
-    Float_u.is_nan (Nested_contract_option.unchecked_value Nested_contract_option.none).#x);
-  let v = Nested_contract_option.some #{ x = #2.5 } in
-  assert (Nested_contract_option.is_some v);
-  assert (Float_u.equal (Nested_contract_option.value_exn v).#x #2.5);
+    Float_u.is_nan (Nested_contract.Option.unchecked_value Nested_contract.Option.none).#x);
+  let v = Nested_contract.Option.some #{ Nested_contract.x = #2.5 } in
+  assert (Nested_contract.Option.is_some v);
+  assert (Float_u.equal (Nested_contract.Option.value_exn v).#x #2.5);
   assert (
     Float_u.equal
-      (Nested_contract_option.value
-         Nested_contract_option.none
-         ~default:(Nested_contract_option.value_exn v))
+      (Nested_contract.Option.value
+         Nested_contract.Option.none
+         ~default:(Nested_contract.Option.value_exn v))
         .#x
       #2.5)
 ;;

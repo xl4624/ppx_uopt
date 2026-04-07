@@ -15,21 +15,21 @@ module Local_field = struct
   end
 end
 
-type mixed_contract =
-  #{ x : Float_u.t
-   ; y : Local_field.t
-   }
-[@@deriving unboxed_option]
-
-module Mixed_contract_option = Option
+module Mixed_contract = struct
+  type t =
+    #{ x : Float_u.t
+     ; y : Local_field.t
+     }
+  [@@deriving unboxed_option]
+end
 
 let () =
-  assert (Mixed_contract_option.is_none Mixed_contract_option.none);
-  let none_payload = Mixed_contract_option.unchecked_value Mixed_contract_option.none in
+  assert (Mixed_contract.Option.is_none Mixed_contract.Option.none);
+  let none_payload = Mixed_contract.Option.unchecked_value Mixed_contract.Option.none in
   assert (Float_u.is_nan none_payload.#x);
   assert (Float_u.is_nan none_payload.#y);
-  let v = Mixed_contract_option.some #{ x = #1.0; y = #2.0 } in
-  assert (Mixed_contract_option.is_some v);
-  assert (Float_u.equal (Mixed_contract_option.value_exn v).#x #1.0);
-  assert (Float_u.equal (Mixed_contract_option.value_exn v).#y #2.0)
+  let v = Mixed_contract.Option.some #{ Mixed_contract.x = #1.0; y = #2.0 } in
+  assert (Mixed_contract.Option.is_some v);
+  assert (Float_u.equal (Mixed_contract.Option.value_exn v).#x #1.0);
+  assert (Float_u.equal (Mixed_contract.Option.value_exn v).#y #2.0)
 ;;
