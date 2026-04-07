@@ -4,8 +4,14 @@ module Local_field = struct
   type t = float#
 
   module Option = struct
-    let none = Float_u.nan ()
-    let is_none t = Float_u.is_nan t
+    type value = t
+    type t = #(bool * value)
+
+    let none = #(false, Float_u.nan ())
+
+    let unchecked_value = function
+      | #(_, value) -> value
+    ;;
   end
 end
 
@@ -19,8 +25,9 @@ module Mixed_contract_option = Option
 
 let () =
   assert (Mixed_contract_option.is_none Mixed_contract_option.none);
-  assert (Mixed_contract_option.is_none #{ x = Float_u.nan (); y = #1.0 });
-  assert (Mixed_contract_option.is_none #{ x = #1.0; y = Local_field.Option.none });
+  let none_payload = Mixed_contract_option.unchecked_value Mixed_contract_option.none in
+  assert (Float_u.is_nan none_payload.#x);
+  assert (Float_u.is_nan none_payload.#y);
   let v = Mixed_contract_option.some #{ x = #1.0; y = #2.0 } in
   assert (Mixed_contract_option.is_some v);
   assert (Float_u.equal (Mixed_contract_option.value_exn v).#x #1.0);

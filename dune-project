@@ -3,7 +3,7 @@
 (name ppx_uopt)
 
 (source
- (github xl4624/ppx_uopt)
+ (github xl4624/ppx_uopt))
 
 (authors "Xiaomin Liu <xl4624@nyu.edu>")
 
@@ -11,14 +11,13 @@
 
 (package
  (name ppx_uopt)
+ (allow_empty)
  (synopsis "[@@deriving unboxed_option]")
  (description "PPX deriver for allocation-free Option helpers on unboxed types")
  (depends
   ocaml
   dune
   ppxlib
-  ppxlib_jane
-  ppxlib.metaquot)
+  ppxlib_jane)
  (tags
   ("ppx" "oxcaml" "unboxed" "option" "deriving")))
-

@@ -8,8 +8,9 @@ type pair =
 
 let () =
   assert (Option.is_none Option.none);
-  assert (Option.is_none #{ x = Float_u.nan (); y = #1.0 });
-  assert (Option.is_none #{ x = #1.0; y = Float_u.nan () });
+  let none_payload = Option.unchecked_value Option.none in
+  assert (Float_u.is_nan none_payload.#x);
+  assert (Float_u.is_nan none_payload.#y);
   let p = Option.some #{ x = #1.0; y = #2.0 } in
   assert (Option.is_some p);
   assert (not (Option.is_none p));

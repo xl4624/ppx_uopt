@@ -50,6 +50,13 @@ let eapply ~loc f args = pexp_apply ~loc f (List.map (fun a -> Nolabel, a) args)
 
 (* [not e] *)
 let enot ~loc e = eapply ~loc (evar ~loc "not") [ e ]
+let tagged_option_type ~loc = [%type: #(bool * value)]
+let tagged_none_expr ~loc payload = [%expr #(false, [%e payload])]
+let tagged_some_expr ~loc payload = [%expr #(true, [%e payload])]
+
+type repr_kind =
+  | Sentinel_repr
+  | Tagged_repr
 
 (* Qualified identifier [M.x] from string list *)
 let eqident ~loc parts =
@@ -207,6 +214,26 @@ let scalar_none_expr ~loc kind ~none_override =
          "ppx_uopt: %s requires a none sentinel, e.g. [@@deriving unboxed_option { none \
           = ... }]"
          (scalar_kind_name kind))
+;;
+
+let scalar_default_payload_expr ~loc = function
+  | Float_u_scalar ->
+    eapply
+      ~loc
+      (eqident ~loc [ "Float_u"; "nan" ])
+      [ pexp_construct ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "()") None ]
+  | Float32_u_scalar ->
+    eapply
+      ~loc
+      (eqident ~loc [ "Float32_u"; "nan" ])
+      [ pexp_construct ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "()") None ]
+  | Int32_u_scalar -> to_unboxed_constant_expr ~loc [%expr 0l]
+  | Int64_u_scalar -> to_unboxed_constant_expr ~loc [%expr 0L]
+  | Nativeint_u_scalar -> to_unboxed_constant_expr ~loc [%expr 0n]
+  | Int8_u_scalar -> to_unboxed_constant_expr ~loc [%expr 0s]
+  | Int16_u_scalar -> to_unboxed_constant_expr ~loc [%expr 0S]
+  | Int_u_scalar -> eapply ~loc (evar ~loc "_uopt_of_int") [ [%expr 0] ]
+  | Char_u_scalar -> to_unboxed_constant_expr ~loc [%expr '\000']
 ;;
 
 let scalar_equal_fn ~loc = function
@@ -367,10 +394,9 @@ let classify_record_field ~loc (ld : label_declaration) =
        Location.raise_errorf
          ~loc
          "ppx_uopt: unsupported field type for field '%s'. Module-qualified contract \
-          fields must have the form %s.t and use the contract %s.Option.none : %s.t and \
-          %s.Option.is_none : %s.t -> bool."
+          fields must have the form %s.t and provide an Option module where \
+          %s.Option.unchecked_value %s.Option.none : %s.t."
          field_name
-         (string_of_longident base)
          (string_of_longident base)
          (string_of_longident base)
          (string_of_longident base)
@@ -381,14 +407,14 @@ let classify_record_field ~loc (ld : label_declaration) =
          ~loc
          "ppx_uopt: unsupported field type for field '%s'. Supported unboxed-record \
           fields are supported unboxed scalar types or module-qualified contract types \
-          of the form M.t with M.Option.none and M.Option.is_none."
+          of the form M.t with M.Option.none and M.Option.unchecked_value."
          field_name
      | _ ->
        Location.raise_errorf
          ~loc
          "ppx_uopt: unsupported field type for field '%s'. Supported unboxed-record \
           fields are supported unboxed scalar types or module-qualified contract types \
-          of the form M.t with M.Option.none and M.Option.is_none."
+          of the form M.t with M.Option.none and M.Option.unchecked_value."
          field_name)
 ;;
 
@@ -401,10 +427,10 @@ let record_scalar_kinds ~loc labels =
   |> List.sort_uniq compare_scalar_kind
 ;;
 
-let contract_none_name field_name = "_uopt_contract_" ^ field_name ^ "_none"
+let contract_payload_name field_name = "_uopt_contract_" ^ field_name ^ "_payload"
 let contract_is_none_name field_name = "_uopt_contract_" ^ field_name ^ "_is_none"
 
-let contract_helper_items ~loc labels =
+let contract_helper_items ~loc labels ~need_is_none =
   labels
   |> List.concat_map (fun (ld : label_declaration) ->
     let field_name = ld.pld_name.txt in
@@ -419,30 +445,44 @@ let contract_helper_items ~loc labels =
               ~pat:
                 (ppat_constraint
                    ~loc
-                   (ppat_var ~loc { txt = contract_none_name field_name; loc })
+                   (ppat_var ~loc { txt = contract_payload_name field_name; loc })
                    ld.pld_type)
-              ~expr:(eqident_lid ~loc base [ "Option"; "none" ])
-          ]
-      ; pstr_value
-          ~loc
-          Nonrecursive
-          [ value_binding
-              ~loc
-              ~pat:
-                (ppat_constraint
+              ~expr:
+                (eapply
                    ~loc
-                   (ppat_var ~loc { txt = contract_is_none_name field_name; loc })
-                   (ptyp_arrow ~loc Nolabel ld.pld_type [%type: bool]))
-              ~expr:(eqident_lid ~loc base [ "Option"; "is_none" ])
+                   (eqident_lid ~loc base [ "Option"; "unchecked_value" ])
+                   [ eqident_lid ~loc base [ "Option"; "none" ] ])
           ]
-      ])
+      ]
+      @
+      if need_is_none
+      then
+        [ pstr_value
+            ~loc
+            Nonrecursive
+            [ value_binding
+                ~loc
+                ~pat:
+                  (ppat_constraint
+                     ~loc
+                     (ppat_var ~loc { txt = contract_is_none_name field_name; loc })
+                     (ptyp_arrow ~loc Nolabel ld.pld_type [%type: bool]))
+                ~expr:(eqident_lid ~loc base [ "Option"; "is_none" ])
+            ]
+        ]
+      else [])
 ;;
 
 type type_info =
   | Scalar of scalar_kind
   | Unboxed_record of label_declaration list
 
-let detect_type_info ~loc (td : type_declaration) ~none_override =
+let repr_kind_of_none_override = function
+  | Some _ -> Sentinel_repr
+  | None -> Tagged_repr
+;;
+
+let detect_type_info ~loc (td : type_declaration) ~none_override:_ =
   let kind = Ppxlib_jane.Shim.Type_kind.of_parsetree td.ptype_kind in
   match kind with
   | Ptype_record_unboxed_product labels -> Unboxed_record labels
@@ -450,15 +490,7 @@ let detect_type_info ~loc (td : type_declaration) ~none_override =
     (match td.ptype_manifest with
      | Some ct ->
        (match scalar_kind_of_core_type ct with
-        | Some scalar_kind ->
-          if scalar_requires_none_override scalar_kind && Option.is_none none_override
-          then
-            Location.raise_errorf
-              ~loc
-              "ppx_uopt: %s requires a none sentinel, e.g. [@@deriving unboxed_option { \
-               none = ... }]"
-              (scalar_kind_name scalar_kind);
-          Scalar scalar_kind
+        | Some scalar_kind -> Scalar scalar_kind
         | None ->
           Location.raise_errorf
             ~loc
@@ -504,7 +536,7 @@ let gen_unboxed_record_none ~loc labels ~none_override =
                     none sentinel for the whole record"
                    field_name
                    (scalar_kind_name kind))
-            | Record_field_contract _ -> evar ~loc (contract_none_name field_name)
+            | Record_field_contract _ -> evar ~loc (contract_payload_name field_name)
           in
           field_lid, field_none)
         labels
@@ -512,34 +544,42 @@ let gen_unboxed_record_none ~loc labels ~none_override =
     pexp_record_unboxed_product ~loc fields None
 ;;
 
-(* Generate is_none check for unboxed record by OR-ing across all sentinel-bearing fields *)
-let gen_unboxed_record_is_none ~loc labels ~none_override ~none_expr t_expr =
+let default_payload_expr ~loc = function
+  | Scalar kind -> scalar_default_payload_expr ~loc kind
+  | Unboxed_record labels ->
+    let fields =
+      List.map
+        (fun (ld : label_declaration) ->
+          let field_name = ld.pld_name.txt in
+          let field_lid = (fun ~loc s -> { txt = Lident s; loc }) ~loc field_name in
+          let field_payload =
+            match classify_record_field ~loc ld with
+            | Record_field_scalar kind -> scalar_default_payload_expr ~loc kind
+            | Record_field_contract _ -> evar ~loc (contract_payload_name field_name)
+          in
+          field_lid, field_payload)
+        labels
+    in
+    pexp_record_unboxed_product ~loc fields None
+;;
+
+let gen_unboxed_record_is_none_sentinel ~loc labels ~none_expr t_expr =
   let checks =
     List.map
       (fun (ld : label_declaration) ->
         let field_name = ld.pld_name.txt in
         let field_lid = (fun ~loc s -> { txt = Lident s; loc }) ~loc field_name in
+        let field_access =
+          pexp_unboxed_field
+            ~loc
+            t_expr
+            ((fun ~loc s -> { txt = Lident s; loc }) ~loc field_name)
+        in
         match classify_record_field ~loc ld with
         | Record_field_scalar kind ->
-          let field_access =
-            pexp_unboxed_field
-              ~loc
-              t_expr
-              ((fun ~loc s -> { txt = Lident s; loc }) ~loc field_name)
-          in
-          let field_none_override =
-            Option.map
-              (fun _ -> pexp_unboxed_field ~loc none_expr field_lid)
-              none_override
-          in
+          let field_none_override = Some (pexp_unboxed_field ~loc none_expr field_lid) in
           scalar_is_none_body ~loc kind ~none_override:field_none_override field_access
         | Record_field_contract _ ->
-          let field_access =
-            pexp_unboxed_field
-              ~loc
-              t_expr
-              ((fun ~loc s -> { txt = Lident s; loc }) ~loc field_name)
-          in
           eapply ~loc (evar ~loc (contract_is_none_name field_name)) [ field_access ])
       labels
   in
@@ -549,11 +589,18 @@ let gen_unboxed_record_is_none ~loc labels ~none_override ~none_expr t_expr =
       ~loc
       "ppx_uopt: cannot generate is_none for unboxed record with no checkable fields"
   | first :: rest ->
-    List.fold_left (fun acc check -> [%expr [%e acc] || [%e check]]) first rest
+    List.fold_left (fun acc check -> [%expr [%e acc] && [%e check]]) first rest
 ;;
 
 (* Generate the structure (implementation) for the Option module *)
 let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
+  let repr_kind = repr_kind_of_none_override none_override in
+  (match repr_kind, is_none_override with
+   | Tagged_repr, Some _ ->
+     Location.raise_errorf
+       ~loc
+       "ppx_uopt: custom is_none overrides require an explicit none = ... sentinel"
+   | Sentinel_repr, _ | Tagged_repr, None -> ());
   let type_value =
     pstr_type
       ~loc
@@ -586,16 +633,14 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
           ~private_:Public
           ~manifest:
             (Some
-               (ptyp_constr
-                  ~loc
-                  ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value")
-                  []))
+               (match repr_kind with
+                | Sentinel_repr ->
+                  ptyp_constr
+                    ~loc
+                    ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value")
+                    []
+                | Tagged_repr -> tagged_option_type ~loc))
       ]
-  in
-  let none_expr =
-    match type_info with
-    | Scalar kind -> scalar_none_expr ~loc kind ~none_override
-    | Unboxed_record labels -> gen_unboxed_record_none ~loc labels ~none_override
   in
   let helper_items =
     match type_info with
@@ -606,29 +651,85 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
   let contract_items =
     match type_info with
     | Scalar _ -> []
-    | Unboxed_record labels -> contract_helper_items ~loc labels
+    | Unboxed_record labels ->
+      contract_helper_items
+        ~loc
+        labels
+        ~need_is_none:
+          (match repr_kind with
+           | Sentinel_repr -> true
+           | Tagged_repr -> false)
   in
-  let is_none_body t_expr =
-    match is_none_override with
-    | Some is_none_fn -> eapply ~loc is_none_fn [ t_expr ]
-    | None ->
-      (match type_info with
-       | Scalar kind -> scalar_is_none_body ~loc kind ~none_override t_expr
-       | Unboxed_record labels ->
-         gen_unboxed_record_is_none ~loc labels ~none_override ~none_expr t_expr)
+  let sentinel_none_expr =
+    match repr_kind with
+    | Sentinel_repr ->
+      Some
+        (match type_info with
+         | Scalar kind -> scalar_none_expr ~loc kind ~none_override
+         | Unboxed_record labels -> gen_unboxed_record_none ~loc labels ~none_override)
+    | Tagged_repr -> None
   in
-  let let_none = pstr_value ~loc Nonrecursive [ mk_val_binding ~loc "none" none_expr ] in
+  let tagged_none_payload_expr =
+    match repr_kind with
+    | Sentinel_repr -> None
+    | Tagged_repr -> Some (default_payload_expr ~loc type_info)
+  in
+  let let_none =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "none"
+          (match repr_kind with
+           | Sentinel_repr -> Option.get sentinel_none_expr
+           | Tagged_repr -> tagged_none_expr ~loc (Option.get tagged_none_payload_expr))
+      ]
+  in
   let let_some =
     pstr_value
       ~loc
       Nonrecursive
-      [ mk_val_binding ~loc "some" (fun_one ~loc "v" (evar ~loc "v")) ]
+      [ mk_val_binding
+          ~loc
+          "some"
+          (fun_one
+             ~loc
+             "v"
+             (match repr_kind with
+              | Sentinel_repr -> evar ~loc "v"
+              | Tagged_repr -> tagged_some_expr ~loc (evar ~loc "v")))
+      ]
   in
   let let_is_none =
     pstr_value
       ~loc
       Nonrecursive
-      [ mk_val_binding ~loc "is_none" (fun_one ~loc "t" (is_none_body (evar ~loc "t"))) ]
+      [ mk_val_binding
+          ~loc
+          "is_none"
+          (fun_one
+             ~loc
+             "t"
+             (match repr_kind with
+              | Sentinel_repr ->
+                (match is_none_override with
+                 | Some is_none_fn -> eapply ~loc is_none_fn [ evar ~loc "t" ]
+                 | None ->
+                   (match type_info with
+                    | Scalar kind ->
+                      scalar_is_none_body ~loc kind ~none_override (evar ~loc "t")
+                    | Unboxed_record labels ->
+                      gen_unboxed_record_is_none_sentinel
+                        ~loc
+                        labels
+                        ~none_expr:(Option.get sentinel_none_expr)
+                        (evar ~loc "t")))
+              | Tagged_repr ->
+                [%expr
+                  match t with
+                  | #(is_some, _) -> not is_some]))
+      ]
   in
   let let_is_some =
     pstr_value
@@ -640,7 +741,13 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
           (fun_one
              ~loc
              "t"
-             (enot ~loc (eapply ~loc (evar ~loc "is_none") [ evar ~loc "t" ])))
+             (match repr_kind with
+              | Sentinel_repr ->
+                enot ~loc (eapply ~loc (evar ~loc "is_none") [ evar ~loc "t" ])
+              | Tagged_repr ->
+                [%expr
+                  match t with
+                  | #(is_some, _) -> is_some]))
       ]
   in
   let let_value =
@@ -650,7 +757,14 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
       [ mk_val_binding
           ~loc
           "value"
-          (fun_t_default ~loc [%expr if is_none t then default else t])
+          (fun_t_default
+             ~loc
+             (match repr_kind with
+              | Sentinel_repr -> [%expr if is_none t then default else t]
+              | Tagged_repr ->
+                [%expr
+                  match t with
+                  | #(is_some, value) -> if is_some then value else default]))
       ]
   in
   let msg = estring ~loc (Printf.sprintf "%s.Option.value_exn: none" type_name) in
@@ -677,14 +791,34 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
       [ mk_val_binding
           ~loc
           "value_exn"
-          (fun_one ~loc "t" [%expr if is_none t then [%e raise_match] else t])
+          (fun_one
+             ~loc
+             "t"
+             (match repr_kind with
+              | Sentinel_repr -> [%expr if is_none t then [%e raise_match] else t]
+              | Tagged_repr ->
+                [%expr
+                  match t with
+                  | #(is_some, value) -> if is_some then value else [%e raise_match]]))
       ]
   in
   let let_unchecked_value =
     pstr_value
       ~loc
       Nonrecursive
-      [ mk_val_binding ~loc "unchecked_value" (fun_one ~loc "t" (evar ~loc "t")) ]
+      [ mk_val_binding
+          ~loc
+          "unchecked_value"
+          (fun_one
+             ~loc
+             "t"
+             (match repr_kind with
+              | Sentinel_repr -> evar ~loc "t"
+              | Tagged_repr ->
+                [%expr
+                  match t with
+                  | #(_, value) -> value]))
+      ]
   in
   let optional_syntax_mod =
     pstr_module
@@ -778,12 +912,17 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override ~is_none_override =
 ;;
 
 (* Generate the signature for the Option module *)
-let gen_sig_option ~loc ~type_name =
-  let t_typ =
+let gen_sig_option ~loc ~type_name ~none_override =
+  let manifest_typ =
     ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc type_name) []
   in
   let value_typ =
     ptyp_constr ~loc ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value") []
+  in
+  let t_typ =
+    match repr_kind_of_none_override none_override with
+    | Sentinel_repr -> value_typ
+    | Tagged_repr -> tagged_option_type ~loc
   in
   let bool_typ = [%type: bool] in
   let mk_val name ty =
@@ -799,7 +938,7 @@ let gen_sig_option ~loc ~type_name =
           ~cstrs:[]
           ~kind:Ptype_abstract
           ~private_:Public
-          ~manifest:(Some t_typ)
+          ~manifest:(Some manifest_typ)
       ]
   ; psig_type
       ~loc
@@ -811,26 +950,21 @@ let gen_sig_option ~loc ~type_name =
           ~cstrs:[]
           ~kind:Ptype_abstract
           ~private_:Public
-          ~manifest:
-            (Some
-               (ptyp_constr
-                  ~loc
-                  ((fun ~loc s -> { txt = Lident s; loc }) ~loc "value")
-                  []))
+          ~manifest:(Some t_typ)
       ]
-  ; mk_val "none" value_typ
-  ; mk_val "some" (ptyp_arrow ~loc Nolabel value_typ value_typ)
-  ; mk_val "is_none" (ptyp_arrow ~loc Nolabel value_typ bool_typ)
-  ; mk_val "is_some" (ptyp_arrow ~loc Nolabel value_typ bool_typ)
+  ; mk_val "none" t_typ
+  ; mk_val "some" (ptyp_arrow ~loc Nolabel value_typ t_typ)
+  ; mk_val "is_none" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
+  ; mk_val "is_some" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
   ; mk_val
       "value"
       (ptyp_arrow
          ~loc
          Nolabel
-         value_typ
+         t_typ
          (ptyp_arrow ~loc (Labelled "default") value_typ value_typ))
-  ; mk_val "value_exn" (ptyp_arrow ~loc Nolabel value_typ value_typ)
-  ; mk_val "unchecked_value" (ptyp_arrow ~loc Nolabel value_typ value_typ)
+  ; mk_val "value_exn" (ptyp_arrow ~loc Nolabel t_typ value_typ)
+  ; mk_val "unchecked_value" (ptyp_arrow ~loc Nolabel t_typ value_typ)
   ; psig_module
       ~loc
       (module_declaration
@@ -847,10 +981,10 @@ let gen_sig_option ~loc ~type_name =
                      ~type_:
                        (pmty_signature
                           ~loc
-                          [ mk_val "is_none" (ptyp_arrow ~loc Nolabel value_typ bool_typ)
+                          [ mk_val "is_none" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
                           ; mk_val
                               "unsafe_value"
-                              (ptyp_arrow ~loc Nolabel value_typ value_typ)
+                              (ptyp_arrow ~loc Nolabel t_typ value_typ)
                           ]))
               ]))
   ]
@@ -917,7 +1051,7 @@ let sig_type_decl =
        match tds with
        | [ td ] ->
          let type_name = td.ptype_name.txt in
-         let items = gen_sig_option ~loc ~type_name in
+         let items = gen_sig_option ~loc ~type_name ~none_override:_none_opt in
          [ wrap_in_module_sig ~loc "Option" items ]
        | _ ->
          Location.raise_errorf

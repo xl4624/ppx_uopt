@@ -10,8 +10,9 @@ module Packed_point_option = Option
 
 let () =
   assert (Packed_point_option.is_none Packed_point_option.none);
-  assert (Packed_point_option.is_none #{ x = #0s; y = #7l });
-  assert (Packed_point_option.is_none #{ x = #7s; y = #0l });
+  assert (Packed_point_option.is_none #{ x = #0s; y = #0l });
+  assert (not (Packed_point_option.is_none #{ x = #0s; y = #7l }));
+  assert (not (Packed_point_option.is_none #{ x = #7s; y = #0l }));
   let p = Packed_point_option.some #{ x = #7s; y = #9l } in
   assert (Packed_point_option.is_some p);
   let v = Packed_point_option.value_exn p in
