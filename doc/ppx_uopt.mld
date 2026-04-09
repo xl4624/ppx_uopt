@@ -1,0 +1,140 @@
+{0 ppx_uopt}
+
+[ppx_uopt] derives allocation-free [Option]-style helpers for unboxed scalar types and
+unboxed records in OxCaml.
+
+Add [\[@@deriving unboxed_option\]] to any supported type declaration and the deriver
+generates an [Option] submodule with:
+
+{[
+type value = t
+type t      (* = value or #(bool * value) depending on representation *)
+
+val none            : t
+val some            : value -> t
+val is_none         : t -> bool
+val is_some         : t -> bool
+val value           : t -> default:value -> value
+val value_exn       : t -> value
+val unchecked_value : t -> value
+
+module Optional_syntax : sig
+  module Optional_syntax : sig
+    val is_none      : t -> bool  [@inline] [@zero_alloc]
+    val unsafe_value : t -> value [@inline] [@zero_alloc]
+  end
+end
+]}
+
+{1 Supported types}
+
+{2 Scalars}
+
+- [float#]
+- [float32#]
+- [int32#]
+- [int64#]
+- [nativeint#]
+- [int8#]
+- [int16#]
+- [int#]
+- [char#]
+
+{2 Unboxed records}
+
+Unboxed records whose fields are all either supported unboxed scalars or
+module-qualified contract fields of the form [M.t] (see {!section-contracts}).
+
+{1 Representations}
+
+{2 Tagged (default)}
+
+When no [none = ...] override is given:
+
+{[
+type token = float# [@@deriving unboxed_option]
+(* Option.t    = #(bool * float#) *)
+(* Option.none = #(false, 0.)     *)
+(* Option.some v = #(true, v)     *)
+]}
+
+[Option.is_none] only checks the leading [bool] tag; the payload is ignored.
+
+{2 Sentinel-backed via none = ...}
+
+{[
+type token = int8# [@@deriving unboxed_option { none = #0s }]
+(* Option.t    = int8# *)
+(* Option.none = #0s   *)
+(* Option.some is the identity *)
+]}
+
+{2 Sentinel-backed via sentinel = true}
+
+Uses a synthesized default sentinel for the type (NaN for floats; requires an explicit
+[none] for integer-like types):
+
+{[
+type token = float# [@@deriving unboxed_option { sentinel = true }]
+]}
+
+{1 Unboxed record examples}
+
+Full record sentinel:
+
+{[
+type packed_pair = #{ x : int8#; y : int32# }
+[@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
+]}
+
+Partial override (omitted fields use their default sentinels):
+
+{[
+type packed_pair = #{ x : int8#; y : float# }
+[@@deriving unboxed_option { none = #{ x = #15s } }]
+(* synthesized none = #{ x = #15s; y = Float_u.nan () } *)
+(* is_none checks BOTH fields, so #{ x = #15s; y = #7.0 } is some, not none *)
+]}
+
+{1:contracts Contract fields}
+
+A record field of type [M.t] is accepted when the generated code can rely on this
+contract:
+
+{[
+M.Option.none            : M.Option.t
+M.Option.unchecked_value : M.Option.t -> M.t
+]}
+
+In sentinel-backed record mode, generated [is_none] checks also require:
+
+{[
+M.Option.is_none : M.t -> bool
+]}
+
+Example:
+
+{[
+module Foo = struct
+  type t = float#
+  module Option = struct
+    type value = t
+    type t = #(bool * value)
+    let none = #(false, Float_u.nan ())
+    let unchecked_value = function #(_, v) -> v
+  end
+end
+
+type record = #{ x : Foo.t } [@@deriving unboxed_option]
+]}
+
+{1:guidance When to use each representation}
+
+- {b Tagged mode}: explicit semantics; correctness does not depend on reserving a
+  sentinel value.
+- {b [none = ...]}: compact sentinel-backed representation when you have a value that can
+  safely be reserved.
+- {b [sentinel = true]}: sentinel-backed with synthesized defaults (float NaN; not
+  available for integer types without an explicit [none]).
+- {b Partial record [none]}: [is_none] still checks every field, so only the exact
+  synthesized sentinel value is [none].

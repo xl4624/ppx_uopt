@@ -1,170 +1,144 @@
 # ppx_uopt
 
-`ppx_uopt` derives allocation-free `Option`-style helpers for unboxed scalar types and
-unboxed records in OxCaml.
+`[@@deriving unboxed_option]` generates an allocation-free `Option` module for unboxed
+scalar types and unboxed records in OxCaml.
 
-It generates an `Option` module with:
-- `none`
-- `some`
-- `is_none`
-- `is_some`
-- `value`
-- `value_exn`
-- `unchecked_value`
-- `Optional_syntax`
+## Installation
 
-## Supported Types
+Requires an OxCaml switch. To install:
 
-Supported scalar types:
-- `float#`
-- `float32#`
-- `int32#`
-- `int64#`
-- `bits64`
-- `nativeint#`
-- `int8#`
-- `int16#`
-- `int#`
-- `char#`
-
-Supported record types:
-- unboxed records whose fields are all either supported unboxed scalar fields
-- or module-qualified contract fields of the form `M.t`
-
-## Representation
-
-`ppx_uopt` has two representations.
-
-Without `none = ...`:
-- `Option.t = #(bool * value)`
-- `Option.none = #(false, payload)`
-- `Option.some v = #(true, v)`
-- `Option.is_none` only checks whether the leading `bool` is `false`
-
-With `none = ...`:
-- `Option.t = value`
-- `Option.none = sentinel`
-- `Option.some` is the identity
-- `Option.is_none` uses sentinel checks
-
-With `sentinel = true`:
-- `Option.t = value`
-- `Option.none` is synthesized from the default sentinel for the type
-- `Option.some` is the identity
-- `Option.is_none` uses the synthesized sentinel checks
-
-## Contract Fields
-
-A record field of type `M.t` is supported only when the generated code can rely on this
-contract:
-
-```ocaml
-M.Option.none : M.Option.t
-M.Option.unchecked_value : M.Option.t -> M.t
+```
+opam pin add ppx_uopt git+https://github.com/xl4624/ppx_uopt.git
 ```
 
-If the enclosing derived option uses an explicit `none = ...` sentinel, generated record
-`is_none` checks also require:
+Then add `ppx_uopt` to your library's `preprocess` stanza:
 
-```ocaml
-M.Option.is_none : M.t -> bool
+```dune
+(library
+ (name mylib)
+ (preprocess (pps ppx_uopt)))
 ```
 
-So for `M.t` fields, generated code may refer to:
-- `M.Option.none`
-- `M.Option.unchecked_value`
-- `M.Option.is_none` in sentinel-backed record mode
+## Generated interface
 
-## Examples
+```ocaml
+type value = t
+type t  (* = value or #(bool * value), depending on representation *)
 
-Tagged scalar:
+val none            : t
+val some            : value -> t
+val is_none         : t -> bool
+val is_some         : t -> bool
+val value           : t -> default:value -> value
+val value_exn       : t -> value
+val unchecked_value : t -> value
+
+module Optional_syntax : sig
+  module Optional_syntax : sig
+    val is_none      : t -> bool  [@inline] [@zero_alloc]
+    val unsafe_value : t -> value [@inline] [@zero_alloc]
+  end
+end
+```
+
+## Supported types
+
+Scalars: `float#`, `float32#`, `int32#`, `int64#`, `nativeint#`, `int8#`, `int16#`,
+`int#`, `char#`
+
+Unboxed records whose fields are all either supported scalars or module-qualified contract
+fields of the form `M.t` (see [Contract fields](#contract-fields)).
+
+## Representations
+
+### Tagged (default)
+
+When no `none = ...` override is given, `t = #(bool * value)`:
 
 ```ocaml
 type token = float# [@@deriving unboxed_option]
+(* Option.t    = #(bool * float#) *)
+(* Option.none = #(false, 0.)     *)
+(* Option.some v = #(true, v)     *)
 ```
 
-Sentinel-backed scalar:
+`is_none` only checks the leading tag; the payload is irrelevant.
+
+### Sentinel via `none = ...`
+
+`t = value`, with a reserved sentinel:
 
 ```ocaml
 type token = int8# [@@deriving unboxed_option { none = #0s }]
+(* Option.t    = int8# *)
+(* Option.none = #0s   *)
+(* Option.some is the identity *)
 ```
 
-Sentinel-backed scalar using the default sentinel:
+### Sentinel via `sentinel = true`
+
+Uses a synthesized default sentinel (NaN for floats; not available for integer types):
 
 ```ocaml
 type token = float# [@@deriving unboxed_option { sentinel = true }]
 ```
 
-Sentinel-backed record:
+## Record examples
+
+Full sentinel override:
 
 ```ocaml
-type packed_pair =
-  #{ x : int8#
-   ; y : int32#
-   }
+type packed_pair = #{ x : int8#; y : int32# }
 [@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
 ```
 
-Sentinel-backed record with a partial override:
+Partial override - omitted fields use their default sentinels:
 
 ```ocaml
-type packed_pair =
-  #{ x : int8#
-   ; y : float#
-   }
+type packed_pair = #{ x : int8#; y : float# }
 [@@deriving unboxed_option { none = #{ x = #15s } }]
+(* synthesized none = #{ x = #15s; y = Float_u.nan () } *)
+(* is_none checks BOTH fields: #{ x = #15s; y = #7.0 } is some, not none *)
 ```
 
-Omitted fields in a record `none = #{ ... }` override use their default sentinels.
-In this example the synthesized `none` value is `#{ x = #15s; y = Float_u.nan () }`.
-`Option.is_none` must still check both fields, so `#{ x = #15s; y = #7.0 }` is `some`,
-not `none`.
+## Contract fields
 
-Record with a nested contract field:
+A record field of type `M.t` is supported when the generated code can satisfy this
+contract:
+
+```ocaml
+M.Option.none            : M.Option.t
+M.Option.unchecked_value : M.Option.t -> M.t
+```
+
+In sentinel-backed record mode, `is_none` also requires:
+
+```ocaml
+M.Option.is_none : M.t -> bool
+```
+
+Example:
 
 ```ocaml
 module Foo = struct
   type t = float#
-
   module Option = struct
     type value = t
     type t = #(bool * value)
-
     let none = #(false, Float_u.nan ())
-
-    let unchecked_value = function
-      | #(_, value) -> value
+    let unchecked_value = function #(_, v) -> v
   end
 end
 
 type record = #{ x : Foo.t } [@@deriving unboxed_option]
 ```
 
-See more examples in [test/](./test/).
+## Guidance
 
-## Record Semantics
+- **Tagged mode** - explicit semantics; correctness does not depend on a reserved sentinel.
+- **`none = ...`** - compact representation when a specific value can be safely reserved.
+- **`sentinel = true`** - sentinel-backed with synthesized defaults (floats only).
+- **Partial record `none`** - `is_none` still checks every field, so only the exact
+  synthesized sentinel is `none`.
 
-Tagged mode: a record option is `none` only when its outer tag is `false`
-
-Sentinel mode: a record option is `none` iff every field matches that field's sentinel.
-With `none = #{ ... }`, explicitly listed fields use the provided values and omitted fields
-still use their synthesized default sentinels.
-
-## Notes
-
-- Use tagged mode when you want explicit semantics and do not want correctness to depend
-  on reserving a sentinel payload.
-- Use `none = ...` when you have a value that can be reserved as a sentinel and you
-  intentionally want the more compact sentinel-backed representation.
-- Use `sentinel = true` when you want sentinel-backed representation with synthesized
-  default sentinels.
-- Unboxed records may use `none = #{ ... }` to define or partially override a record
-  sentinel explicitly.
-
-## TODO
-
-- Improve diagnostics around contract fields.
-  The current behavior is explicit, but the error messages could do a better job
-  of explaining when a field is rejected because it is not written as `M.t`, and
-  when generated code later fails because `M.Option.none`,
-  `M.Option.unchecked_value`, or `M.Option.is_none` is missing.
+See [test/](./test/) for more examples.
