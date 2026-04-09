@@ -22,21 +22,23 @@ Then add `ppx_uopt` to your library's `preprocess` stanza:
 ## Generated interface
 
 ```ocaml
-type value = t
-type t  (* = value or #(bool * value), depending on representation *)
+module Option : sig
+  type value = t
+  type t  (* = value or #(bool * value), depending on representation *)
 
-val none            : t
-val some            : value -> t
-val is_none         : t -> bool
-val is_some         : t -> bool
-val value           : t -> default:value -> value
-val value_exn       : t -> value
-val unchecked_value : t -> value
+  val none            : t
+  val some            : value -> t
+  val is_none         : t -> bool
+  val is_some         : t -> bool
+  val value           : t -> default:value -> value
+  val value_exn       : t -> value
+  val unchecked_value : t -> value
 
-module Optional_syntax : sig
   module Optional_syntax : sig
-    val is_none      : t -> bool  [@inline] [@zero_alloc]
-    val unsafe_value : t -> value [@inline] [@zero_alloc]
+    module Optional_syntax : sig
+      val is_none      : t -> bool  [@inline] [@zero_alloc]
+      val unsafe_value : t -> value [@inline] [@zero_alloc]
+    end
   end
 end
 ```
@@ -53,7 +55,7 @@ fields of the form `M.t` (see [Contract fields](#contract-fields)).
 
 ### Tagged (default)
 
-When no `none = ...` override is given, `t = #(bool * value)`:
+When no `none = ...` override is given, `Option.t = #(bool * value)`:
 
 ```ocaml
 type token = float# [@@deriving unboxed_option]
@@ -66,7 +68,7 @@ type token = float# [@@deriving unboxed_option]
 
 ### Sentinel via `none = ...`
 
-`t = value`, with a reserved sentinel:
+`Option.t = value`, with a reserved sentinel:
 
 ```ocaml
 type token = int8# [@@deriving unboxed_option { none = #0s }]
