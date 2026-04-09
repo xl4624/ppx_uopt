@@ -17,7 +17,10 @@
   test_record_partial_none
   test_contract_field
   test_mixed_contract_field
-  test_nested_derived_contract)
+  test_nested_derived_contract
+  test_triple_nested_tagged
+  test_triple_nested_sentinel
+  test_wide_record)
  (libraries unboxed test_helpers)
  (preprocess
   (pps ppx_uopt ppx_jane)))
