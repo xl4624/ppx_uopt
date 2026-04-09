@@ -8,6 +8,182 @@ let repr_kind_of_options ~none_override ~sentinel_override =
   if Option.is_some none_override || sentinel_override then Sentinel_repr else Tagged_repr
 ;;
 
+let suppress_warnings ~loc =
+  pstr_attribute
+    ~loc
+    (attribute
+       ~loc
+       ~name:{ txt = "ocaml.warning"; loc }
+       ~payload:(PStr [ pstr_eval ~loc (estring ~loc "-34-60") [] ]))
+;;
+
+let type_empty ~loc =
+  pstr_type
+    ~loc
+    Nonrecursive
+    [ type_declaration
+        ~loc
+        ~name:{ txt = "_uopt_empty"; loc }
+        ~params:[]
+        ~cstrs:[]
+        ~kind:(Ptype_variant [])
+        ~private_:Public
+        ~manifest:None
+    ]
+;;
+
+let raise_match ~loc ~type_name =
+  let msg = estring ~loc (Printf.sprintf "%s.Option.value_exn: none" type_name) in
+  let nothing_ty = ptyp_constr ~loc { txt = Lident "_uopt_empty"; loc } [] in
+  pexp_match
+    ~loc
+    [%expr Stdlib.raise (Failure [%e msg])]
+    [ { pc_lhs = ppat_constraint ~loc (ppat_var ~loc { txt = "_"; loc }) nothing_ty
+      ; pc_guard = None
+      ; pc_rhs = pexp_unreachable ~loc
+      }
+    ]
+;;
+
+let optional_syntax_mod ~loc =
+  pstr_module
+    ~loc
+    (module_binding
+       ~loc
+       ~name:{ txt = Some "Optional_syntax"; loc }
+       ~expr:
+         (pmod_structure
+            ~loc
+            [ pstr_module
+                ~loc
+                (module_binding
+                   ~loc
+                   ~name:{ txt = Some "Optional_syntax"; loc }
+                   ~expr:
+                     (pmod_structure
+                        ~loc
+                        [ pstr_value
+                            ~loc
+                            Nonrecursive
+                            [ value_binding
+                                ~loc
+                                ~pat:(ppat_var ~loc { txt = "is_none"; loc })
+                                ~expr:
+                                  (add_inline_zero_alloc
+                                     ~loc
+                                     (fun_one
+                                        ~loc
+                                        "t"
+                                        (eapply
+                                           ~loc
+                                           (evar ~loc "is_none")
+                                           [ evar ~loc "t" ])))
+                            ]
+                        ; pstr_value
+                            ~loc
+                            Nonrecursive
+                            [ value_binding
+                                ~loc
+                                ~pat:(ppat_var ~loc { txt = "unsafe_value"; loc })
+                                ~expr:
+                                  (add_inline_zero_alloc
+                                     ~loc
+                                     (fun_one
+                                        ~loc
+                                        "t"
+                                        (eapply
+                                           ~loc
+                                           (evar ~loc "unchecked_value")
+                                           [ evar ~loc "t" ])))
+                            ]
+                        ]))
+            ]))
+;;
+
+let type_value_decl ~loc ~type_name =
+  pstr_type
+    ~loc
+    Nonrecursive
+    [ type_declaration
+        ~loc
+        ~name:{ txt = "value"; loc }
+        ~params:[]
+        ~cstrs:[]
+        ~kind:Ptype_abstract
+        ~private_:Public
+        ~manifest:(Some (ptyp_constr ~loc { txt = Lident type_name; loc } []))
+    ]
+;;
+
+let gen_sig_items ~loc ~type_name ~t_typ =
+  let manifest_typ = ptyp_constr ~loc { txt = Lident type_name; loc } [] in
+  let value_typ = ptyp_constr ~loc { txt = Lident "value"; loc } [] in
+  let bool_typ = [%type: bool] in
+  let mk_val name ty =
+    psig_value ~loc (value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[])
+  in
+  [ psig_type
+      ~loc
+      Nonrecursive
+      [ type_declaration
+          ~loc
+          ~name:{ txt = "value"; loc }
+          ~params:[]
+          ~cstrs:[]
+          ~kind:Ptype_abstract
+          ~private_:Public
+          ~manifest:(Some manifest_typ)
+      ]
+  ; psig_type
+      ~loc
+      Nonrecursive
+      [ type_declaration
+          ~loc
+          ~name:{ txt = "t"; loc }
+          ~params:[]
+          ~cstrs:[]
+          ~kind:Ptype_abstract
+          ~private_:Public
+          ~manifest:(Some t_typ)
+      ]
+  ; mk_val "none" t_typ
+  ; mk_val "some" (ptyp_arrow ~loc Nolabel value_typ t_typ)
+  ; mk_val "is_none" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
+  ; mk_val "is_some" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
+  ; mk_val
+      "value"
+      (ptyp_arrow
+         ~loc
+         Nolabel
+         t_typ
+         (ptyp_arrow ~loc (Labelled "default") value_typ value_typ))
+  ; mk_val "value_exn" (ptyp_arrow ~loc Nolabel t_typ value_typ)
+  ; mk_val "unchecked_value" (ptyp_arrow ~loc Nolabel t_typ value_typ)
+  ; psig_module
+      ~loc
+      (module_declaration
+         ~loc
+         ~name:{ txt = Some "Optional_syntax"; loc }
+         ~type_:
+           (pmty_signature
+              ~loc
+              [ psig_module
+                  ~loc
+                  (module_declaration
+                     ~loc
+                     ~name:{ txt = Some "Optional_syntax"; loc }
+                     ~type_:
+                       (pmty_signature
+                          ~loc
+                          [ mk_val "is_none" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
+                          ; mk_val
+                              "unsafe_value"
+                              (ptyp_arrow ~loc Nolabel t_typ value_typ)
+                          ]))
+              ]))
+  ]
+;;
+
 let default_payload_expr ~loc = function
   | Scalar kind -> Scalar_gen.default_payload_expr ~loc kind
   | Unboxed_record labels ->
@@ -43,20 +219,7 @@ let gen_str_option
        ~loc
        "ppx_uopt: custom is_none overrides require an explicit none = ... sentinel"
    | Sentinel_repr, _ | Tagged_repr, None -> ());
-  let type_value =
-    pstr_type
-      ~loc
-      Nonrecursive
-      [ type_declaration
-          ~loc
-          ~name:{ txt = "value"; loc }
-          ~params:[]
-          ~cstrs:[]
-          ~kind:Ptype_abstract
-          ~private_:Public
-          ~manifest:(Some (ptyp_constr ~loc { txt = Lident type_name; loc } []))
-      ]
-  in
+  let type_value = type_value_decl ~loc ~type_name in
   let type_t =
     pstr_type
       ~loc
@@ -210,18 +373,7 @@ let gen_str_option
                   | #(is_some, value) -> if is_some then value else default]))
       ]
   in
-  let msg = estring ~loc (Printf.sprintf "%s.Option.value_exn: none" type_name) in
-  let nothing_ty = ptyp_constr ~loc { txt = Lident "_uopt_empty"; loc } [] in
-  let raise_match =
-    pexp_match
-      ~loc
-      [%expr Stdlib.raise (Failure [%e msg])]
-      [ { pc_lhs = ppat_constraint ~loc (ppat_var ~loc { txt = "_"; loc }) nothing_ty
-        ; pc_guard = None
-        ; pc_rhs = pexp_unreachable ~loc
-        }
-      ]
-  in
+  let raise_match = raise_match ~loc ~type_name in
   let let_value_exn =
     pstr_value
       ~loc
@@ -258,83 +410,7 @@ let gen_str_option
                   | #(_, value) -> value]))
       ]
   in
-  let optional_syntax_mod =
-    pstr_module
-      ~loc
-      (module_binding
-         ~loc
-         ~name:{ txt = Some "Optional_syntax"; loc }
-         ~expr:
-           (pmod_structure
-              ~loc
-              [ pstr_module
-                  ~loc
-                  (module_binding
-                     ~loc
-                     ~name:{ txt = Some "Optional_syntax"; loc }
-                     ~expr:
-                       (pmod_structure
-                          ~loc
-                          [ pstr_value
-                              ~loc
-                              Nonrecursive
-                              [ value_binding
-                                  ~loc
-                                  ~pat:(ppat_var ~loc { txt = "is_none"; loc })
-                                  ~expr:
-                                    (add_inline_zero_alloc
-                                       ~loc
-                                       (fun_one
-                                          ~loc
-                                          "t"
-                                          (eapply
-                                             ~loc
-                                             (evar ~loc "is_none")
-                                             [ evar ~loc "t" ])))
-                              ]
-                          ; pstr_value
-                              ~loc
-                              Nonrecursive
-                              [ value_binding
-                                  ~loc
-                                  ~pat:(ppat_var ~loc { txt = "unsafe_value"; loc })
-                                  ~expr:
-                                    (add_inline_zero_alloc
-                                       ~loc
-                                       (fun_one
-                                          ~loc
-                                          "t"
-                                          (eapply
-                                             ~loc
-                                             (evar ~loc "unchecked_value")
-                                             [ evar ~loc "t" ])))
-                              ]
-                          ]))
-              ]))
-  in
-  let type_empty =
-    pstr_type
-      ~loc
-      Nonrecursive
-      [ type_declaration
-          ~loc
-          ~name:{ txt = "_uopt_empty"; loc }
-          ~params:[]
-          ~cstrs:[]
-          ~kind:(Ptype_variant [])
-          ~private_:Public
-          ~manifest:None
-      ]
-  in
-  let suppress_warnings =
-    pstr_attribute
-      ~loc
-      (attribute
-         ~loc
-         ~name:{ txt = "ocaml.warning"; loc }
-         ~payload:(PStr [ pstr_eval ~loc (estring ~loc "-34-60") [] ]))
-  in
-  [ suppress_warnings; type_value; type_t ]
+  [ suppress_warnings ~loc; type_value; type_t ]
   @ helper_items
   @ contract_items
   @ [ let_none
@@ -342,38 +418,28 @@ let gen_str_option
     ; let_is_none
     ; let_is_some
     ; let_value
-    ; type_empty
+    ; type_empty ~loc
     ; let_value_exn
     ; let_unchecked_value
-    ; optional_syntax_mod
+    ; optional_syntax_mod ~loc
     ]
 ;;
 
 let gen_sig_option ~loc ~type_name ~none_override ~sentinel_override =
-  let manifest_typ = ptyp_constr ~loc { txt = Lident type_name; loc } [] in
   let value_typ = ptyp_constr ~loc { txt = Lident "value"; loc } [] in
   let t_typ =
     match repr_kind_of_options ~none_override ~sentinel_override with
     | Sentinel_repr -> value_typ
     | Tagged_repr -> tagged_option_type ~loc
   in
-  let bool_typ = [%type: bool] in
-  let mk_val name ty =
-    psig_value ~loc (value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[])
-  in
-  [ psig_type
-      ~loc
-      Nonrecursive
-      [ type_declaration
-          ~loc
-          ~name:{ txt = "value"; loc }
-          ~params:[]
-          ~cstrs:[]
-          ~kind:Ptype_abstract
-          ~private_:Public
-          ~manifest:(Some manifest_typ)
-      ]
-  ; psig_type
+  gen_sig_items ~loc ~type_name ~t_typ
+;;
+
+let gen_str_alias ~loc ~type_name ~base =
+  let m_option parts = eqident_lid ~loc (Ldot (base, "Option")) parts in
+  let type_value = type_value_decl ~loc ~type_name in
+  let type_t =
+    pstr_type
       ~loc
       Nonrecursive
       [ type_declaration
@@ -383,44 +449,110 @@ let gen_sig_option ~loc ~type_name ~none_override ~sentinel_override =
           ~cstrs:[]
           ~kind:Ptype_abstract
           ~private_:Public
-          ~manifest:(Some t_typ)
+          ~manifest:
+            (Some (ptyp_constr ~loc { txt = Ldot (Ldot (base, "Option"), "t"); loc } []))
       ]
-  ; mk_val "none" t_typ
-  ; mk_val "some" (ptyp_arrow ~loc Nolabel value_typ t_typ)
-  ; mk_val "is_none" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
-  ; mk_val "is_some" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
-  ; mk_val
-      "value"
-      (ptyp_arrow
-         ~loc
-         Nolabel
-         t_typ
-         (ptyp_arrow ~loc (Labelled "default") value_typ value_typ))
-  ; mk_val "value_exn" (ptyp_arrow ~loc Nolabel t_typ value_typ)
-  ; mk_val "unchecked_value" (ptyp_arrow ~loc Nolabel t_typ value_typ)
-  ; psig_module
+  in
+  let let_none =
+    pstr_value
       ~loc
-      (module_declaration
-         ~loc
-         ~name:{ txt = Some "Optional_syntax"; loc }
-         ~type_:
-           (pmty_signature
-              ~loc
-              [ psig_module
-                  ~loc
-                  (module_declaration
-                     ~loc
-                     ~name:{ txt = Some "Optional_syntax"; loc }
-                     ~type_:
-                       (pmty_signature
-                          ~loc
-                          [ mk_val "is_none" (ptyp_arrow ~loc Nolabel t_typ bool_typ)
-                          ; mk_val
-                              "unsafe_value"
-                              (ptyp_arrow ~loc Nolabel t_typ value_typ)
-                          ]))
-              ]))
+      Nonrecursive
+      [ value_binding
+          ~loc
+          ~pat:(ppat_var ~loc { txt = "none"; loc })
+          ~expr:(m_option [ "none" ])
+      ]
+  in
+  let let_some =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "some"
+          (fun_one ~loc "v" (eapply ~loc (m_option [ "some" ]) [ evar ~loc "v" ]))
+      ]
+  in
+  let let_is_none =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "is_none"
+          (fun_one ~loc "t" (eapply ~loc (m_option [ "is_none" ]) [ evar ~loc "t" ]))
+      ]
+  in
+  let let_is_some =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "is_some"
+          (fun_one ~loc "t" (eapply ~loc (m_option [ "is_some" ]) [ evar ~loc "t" ]))
+      ]
+  in
+  let let_value =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "value"
+          (fun_t_default
+             ~loc
+             (pexp_apply
+                ~loc
+                (m_option [ "value" ])
+                [ Nolabel, evar ~loc "t"; Labelled "default", evar ~loc "default" ]))
+      ]
+  in
+  let raise_match = raise_match ~loc ~type_name in
+  let let_value_exn =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "value_exn"
+          (fun_one
+             ~loc
+             "t"
+             [%expr if is_none t then [%e raise_match] else unchecked_value t])
+      ]
+  in
+  let let_unchecked_value =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ mk_val_binding
+          ~loc
+          "unchecked_value"
+          (fun_one
+             ~loc
+             "t"
+             (eapply ~loc (m_option [ "unchecked_value" ]) [ evar ~loc "t" ]))
+      ]
+  in
+  [ suppress_warnings ~loc
+  ; type_value
+  ; type_t
+  ; let_none
+  ; let_some
+  ; let_is_none
+  ; let_is_some
+  ; let_value
+  ; let_unchecked_value
+  ; type_empty ~loc
+  ; let_value_exn
+  ; optional_syntax_mod ~loc
   ]
+;;
+
+let gen_sig_alias ~loc ~type_name ~base =
+  let t_typ = ptyp_constr ~loc { txt = Ldot (Ldot (base, "Option"), "t"); loc } [] in
+  gen_sig_items ~loc ~type_name ~t_typ
 ;;
 
 let wrap_in_module_str ~loc name items =
@@ -464,13 +596,16 @@ let str_type_decl =
          in
          let type_info = detect_type_info ~loc td in
          let items =
-           gen_str_option
-             ~loc
-             ~type_name
-             ~type_info
-             ~none_override:none_opt
-             ~sentinel_override
-             ~is_none_override:is_none_opt
+           match type_info with
+           | Alias base -> gen_str_alias ~loc ~type_name ~base
+           | Payload pti ->
+             gen_str_option
+               ~loc
+               ~type_name
+               ~type_info:pti
+               ~none_override:none_opt
+               ~sentinel_override
+               ~is_none_override:is_none_opt
          in
          [ wrap_in_module_str ~loc "Option" items ]
        | _ ->
@@ -492,8 +627,12 @@ let sig_type_decl =
            | None -> false
            | Some expr -> parse_bool_literal ~loc ~field_name:"sentinel" expr
          in
+         let type_info = detect_type_info ~loc td in
          let items =
-           gen_sig_option ~loc ~type_name ~none_override:none_opt ~sentinel_override
+           match type_info with
+           | Alias base -> gen_sig_alias ~loc ~type_name ~base
+           | Payload _ ->
+             gen_sig_option ~loc ~type_name ~none_override:none_opt ~sentinel_override
          in
          [ wrap_in_module_sig ~loc "Option" items ]
        | _ ->

@@ -23,7 +23,6 @@ let () =
   assert (Int64_u.equal n.#c #0L);
   assert (Float_u.is_nan n.#d);
   assert (Float_u.is_nan n.#e);
-
   (* Every field independently gates is_none *)
   let nan = Float_u.nan () in
   assert (not (Wide.Option.is_none #{ Wide.a = #1s; b = #0l; c = #0L; d = nan; e = nan }));
@@ -31,10 +30,8 @@ let () =
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #1L; d = nan; e = nan }));
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = #1.0; e = nan }));
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = nan; e = #1.0 }));
-
   (* Exact sentinel matches none *)
   assert (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = nan; e = nan });
-
   (* some/value_exn round-trip *)
   let v = Wide.Option.some #{ Wide.a = #7s; b = #8l; c = #9L; d = #1.5; e = #2.5 } in
   assert (Wide.Option.is_some v);
@@ -44,7 +41,6 @@ let () =
   assert (Int64_u.equal r.#c #9L);
   assert (Float_u.equal r.#d #1.5);
   assert (Float_u.equal r.#e #2.5);
-
   (* value ~default *)
   let default : Wide.t = #{ Wide.a = #1s; b = #2l; c = #3L; d = #0.5; e = #0.5 } in
   let resolved = Wide.Option.value Wide.Option.none ~default in
@@ -54,3 +50,4 @@ let () =
   let resolved2 = Wide.Option.value v ~default in
   assert (eq_int8_u resolved2.#a #7s);
   assert (Float_u.equal resolved2.#d #1.5)
+;;

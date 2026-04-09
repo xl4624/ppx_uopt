@@ -21,6 +21,10 @@ type record_field_kind =
   | Record_field_scalar of scalar_kind
   | Record_field_contract of Longident.t
 
-type type_info =
+type payload_type_info =
   | Scalar of scalar_kind
   | Unboxed_record of label_declaration list
+
+type type_info =
+  | Payload of payload_type_info
+  | Alias of Longident.t

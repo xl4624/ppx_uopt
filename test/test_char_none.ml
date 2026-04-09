@@ -1,7 +1,7 @@
 open Test_helpers
 
 module Char_token = struct
-  type t = char# [@@deriving unboxed_option { none = #'\000' }]
+  type t = char# [@@deriving unboxed_option { none = '\000' }]
 end
 
 let () =

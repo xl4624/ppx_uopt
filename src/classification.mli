@@ -1,7 +1,7 @@
+(** Parse-time classification of supported payload and field types. *)
+
 open Ppxlib
 open Uopt_types
-
-(** Parse-time classification of supported payload and field types. *)
 
 (** Return the supported scalar kind for [ct], or [None] if [ct] is not one of the unboxed
     scalar types handled by this deriver. *)

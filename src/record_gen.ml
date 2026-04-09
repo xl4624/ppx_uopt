@@ -60,33 +60,32 @@ let unboxed_record_none_overrides ~loc = function
 
 let gen_unboxed_record_none ~loc labels ~none_override =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
-    let fields =
-      List.map
-        (fun (ld : label_declaration) ->
-          let field_name = ld.pld_name.txt in
-          let field_lid = { txt = Lident field_name; loc } in
-          let field_none =
-            match List.assoc_opt field_name override_exprs with
-            | Some expr -> expr
-            | None ->
-              (match C.classify_record_field ~loc ld with
-               | Record_field_scalar kind ->
-                 (match Scalar_gen.default_none_expr ~loc kind with
-                  | Some expr -> expr
-                  | None ->
-                    Location.raise_errorf
-                      ~loc
-                      "ppx_uopt: unboxed-record field '%s' of type %s requires an \
-                       explicit none sentinel for the whole record"
-                      field_name
-                      (Scalar_gen.kind_name kind))
-               | Record_field_contract _ ->
-                 Ah.evar ~loc (contract_payload_name field_name))
-          in
-          field_lid, field_none)
-        labels
-    in
-    pexp_record_unboxed_product ~loc fields None
+  let fields =
+    List.map
+      (fun (ld : label_declaration) ->
+        let field_name = ld.pld_name.txt in
+        let field_lid = { txt = Lident field_name; loc } in
+        let field_none =
+          match List.assoc_opt field_name override_exprs with
+          | Some expr -> expr
+          | None ->
+            (match C.classify_record_field ~loc ld with
+             | Record_field_scalar kind ->
+               (match Scalar_gen.default_none_expr ~loc kind with
+                | Some expr -> expr
+                | None ->
+                  Location.raise_errorf
+                    ~loc
+                    "ppx_uopt: unboxed-record field '%s' of type %s requires an explicit \
+                     none sentinel for the whole record"
+                    field_name
+                    (Scalar_gen.kind_name kind))
+             | Record_field_contract _ -> Ah.evar ~loc (contract_payload_name field_name))
+        in
+        field_lid, field_none)
+      labels
+  in
+  pexp_record_unboxed_product ~loc fields None
 ;;
 
 let contract_helper_items ~loc labels ~need_is_none =
@@ -119,14 +118,16 @@ let contract_helper_items ~loc labels ~need_is_none =
         [ pstr_value
             ~loc
             Nonrecursive
-            [ value_binding
+            [ Ah.mk_val_binding
                 ~loc
-                ~pat:
-                  (ppat_constraint
-                     ~loc
-                     (ppat_var ~loc { txt = contract_is_none_name field_name; loc })
-                     (ptyp_arrow ~loc Nolabel ld.pld_type [%type: bool]))
-                ~expr:(Ah.eqident_lid ~loc base [ "Option"; "is_none" ])
+                (contract_is_none_name field_name)
+                (Ah.fun_one
+                   ~loc
+                   "v"
+                   (Ah.eapply
+                      ~loc
+                      (Ah.eqident_lid ~loc base [ "Option"; "is_none" ])
+                      [ Ah.evar ~loc "v" ]))
             ]
         ]
       else [])

@@ -62,18 +62,22 @@ let classify_record_field ~loc (ld : label_declaration) =
 let detect_type_info ~loc (td : type_declaration) =
   let kind = Ppxlib_jane.Shim.Type_kind.of_parsetree td.ptype_kind in
   match kind with
-  | Ptype_record_unboxed_product labels -> Unboxed_record labels
+  | Ptype_record_unboxed_product labels -> Payload (Unboxed_record labels)
   | Ptype_abstract ->
     (match td.ptype_manifest with
      | Some ct ->
        (match scalar_kind_of_core_type ct with
-        | Some scalar_kind -> Scalar scalar_kind
+        | Some scalar_kind -> Payload (Scalar scalar_kind)
         | None ->
-          Location.raise_errorf
-            ~loc
-            "ppx_uopt: unsupported type. Supported scalar types are float#, float32#, \
-             int32#, int64#/bits64, nativeint#, int8#, int16#, int#, char#, and unboxed \
-             records.")
+          let ct_desc = Ppxlib_jane.Shim.Core_type_desc.of_parsetree ct.ptyp_desc in
+          (match ct_desc with
+           | Ptyp_constr ({ txt = Ldot (base, "t"); _ }, []) -> Alias base
+           | _ ->
+             Location.raise_errorf
+               ~loc
+               "ppx_uopt: unsupported type. Supported types are unboxed scalars (float#, \
+                float32#, int32#, int64#/bits64, nativeint#, int8#, int16#, int#, \
+                char#), unboxed records, and module-qualified aliases of the form M.t."))
      | None ->
        Location.raise_errorf
          ~loc

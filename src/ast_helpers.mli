@@ -1,9 +1,9 @@
-open Ppxlib
-
 (** Small AST construction helpers used across the generators.
 
     These functions keep the code generators focused on representation logic rather than
     repetitive [Ppxlib] boilerplate. *)
+
+open Ppxlib
 
 (** Attach [@inline] and [@zero_alloc] to a generated expression. *)
 val add_inline_zero_alloc : loc:location -> expression -> expression

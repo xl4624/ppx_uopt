@@ -1,7 +1,7 @@
+(** AST generation helpers for scalar payload representations. *)
+
 open Ppxlib
 open Uopt_types
-
-(** AST generation helpers for scalar payload representations. *)
 
 (** User-facing name for a supported scalar kind, used in diagnostics. *)
 val kind_name : scalar_kind -> string
