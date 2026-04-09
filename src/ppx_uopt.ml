@@ -439,7 +439,7 @@ let wrap_in_module_sig ~loc name items =
 ;;
 
 (* The deriver args: { none = <expr>; sentinel = true; is_none = <expr> } *)
-let args =
+let make_args () =
   let open Deriving.Args in
   empty
   +> arg
@@ -450,9 +450,10 @@ let args =
 ;;
 
 let str_type_decl =
-  Deriving.Generator.make
-    args
-    (fun ~loc ~path:_ (_rec_flag, tds) none_opt sentinel_opt is_none_opt ->
+  Deriving.Generator.V2.make
+    (make_args ())
+    (fun ~ctxt (_rec_flag, tds) none_opt sentinel_opt is_none_opt ->
+       let loc = Expansion_context.Deriver.derived_item_loc ctxt in
        match tds with
        | [ td ] ->
          let type_name = td.ptype_name.txt in
@@ -478,20 +479,11 @@ let str_type_decl =
            "ppx_uopt: only single type declarations are supported")
 ;;
 
-let sig_args =
-  let open Deriving.Args in
-  empty
-  +> arg
-       "none"
-       Ast_pattern.(as__ (pexp_constant drop ||| pexp_record_unboxed_product drop drop))
-  +> arg "sentinel" Ast_pattern.__
-  +> arg "is_none" Ast_pattern.__
-;;
-
 let sig_type_decl =
-  Deriving.Generator.make
-    sig_args
-    (fun ~loc ~path:_ (_rec_flag, tds) none_opt sentinel_opt _ ->
+  Deriving.Generator.V2.make
+    (make_args ())
+    (fun ~ctxt (_rec_flag, tds) none_opt sentinel_opt _ ->
+       let loc = Expansion_context.Deriver.derived_item_loc ctxt in
        match tds with
        | [ td ] ->
          let type_name = td.ptype_name.txt in

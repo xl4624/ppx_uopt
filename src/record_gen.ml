@@ -59,9 +59,7 @@ let unboxed_record_none_overrides ~loc = function
 ;;
 
 let gen_unboxed_record_none ~loc labels ~none_override =
-  match none_override with
-  | Some _ | None ->
-    let override_exprs = unboxed_record_none_overrides ~loc none_override in
+  let override_exprs = unboxed_record_none_overrides ~loc none_override in
     let fields =
       List.map
         (fun (ld : label_declaration) ->
