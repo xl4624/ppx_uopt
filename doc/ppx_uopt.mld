@@ -7,21 +7,23 @@ Add [\[@@deriving unboxed_option\]] to any supported type declaration and the de
 generates an [Option] submodule with:
 
 {[
-type value = t
-type t      (* = value or #(bool * value) depending on representation *)
+module Option : sig
+  type value = t
+  type t      (* = value or #(bool * value) depending on representation *)
 
-val none            : t
-val some            : value -> t
-val is_none         : t -> bool
-val is_some         : t -> bool
-val value           : t -> default:value -> value
-val value_exn       : t -> value
-val unchecked_value : t -> value
+  val none            : t
+  val some            : value -> t
+  val is_none         : t -> bool
+  val is_some         : t -> bool
+  val value           : t -> default:value -> value
+  val value_exn       : t -> value
+  val unchecked_value : t -> value
 
-module Optional_syntax : sig
   module Optional_syntax : sig
-    val is_none      : t -> bool  [@inline] [@zero_alloc]
-    val unsafe_value : t -> value [@inline] [@zero_alloc]
+    module Optional_syntax : sig
+      val is_none      : t -> bool  [@inline] [@zero_alloc]
+      val unsafe_value : t -> value [@inline] [@zero_alloc]
+    end
   end
 end
 ]}
