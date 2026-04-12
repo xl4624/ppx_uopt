@@ -8,9 +8,22 @@ module Local_field = struct
     type t = #(bool * value)
 
     let none = #(false, Float_u.nan ())
+    let some v = #(true, v)
+
+    let is_none = function
+      | #(is_some, _) -> not is_some
+    ;;
 
     let unchecked_value = function
       | #(_, value) -> value
+    ;;
+
+    let sexp_of_value v = Float_u.sexp_of_t v
+
+    let sexp_of_t t =
+      Sexplib0.Sexp_conv.sexp_of_option
+        (fun x -> x)
+        (if is_none t then None else Some (sexp_of_value (unchecked_value t)))
     ;;
   end
 end

@@ -40,6 +40,9 @@ val is_none_body
   -> expression
   -> expression
 
+(** Build an expression that converts a scalar value to [Sexplib0.Sexp.t]. *)
+val sexp_of_value_expr : loc:location -> scalar_kind -> expression -> expression
+
 (** Helper definitions required by generated scalar option modules for [kind].
 
     This emits primitives only for scalar kinds that need extra support code, such as

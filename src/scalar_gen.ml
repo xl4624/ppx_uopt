@@ -15,9 +15,7 @@ let kind_name = function
   | Char_u_scalar -> "char#"
 ;;
 
-let unit_arg ~loc =
-  pexp_construct ~loc { txt = Lident "()"; loc } None
-;;
+let unit_arg ~loc = pexp_construct ~loc { txt = Lident "()"; loc } None
 
 let default_none_expr ~loc = function
   | Float_u_scalar ->
@@ -25,9 +23,17 @@ let default_none_expr ~loc = function
   | Float32_u_scalar ->
     Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Float32_u"; "nan" ]) [ unit_arg ~loc ])
   | Int8_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int8_u"; "min_int" ]) [ unit_arg ~loc ])
+    Some
+      (Ah.eapply
+         ~loc
+         (Ah.eqident ~loc [ "Stdlib_stable"; "Int8_u"; "min_int" ])
+         [ unit_arg ~loc ])
   | Int16_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int16_u"; "min_int" ]) [ unit_arg ~loc ])
+    Some
+      (Ah.eapply
+         ~loc
+         (Ah.eqident ~loc [ "Stdlib_stable"; "Int16_u"; "min_int" ])
+         [ unit_arg ~loc ])
   | Int32_u_scalar ->
     Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int32_u"; "min_value" ]) [ unit_arg ~loc ])
   | Int64_u_scalar ->
@@ -36,7 +42,11 @@ let default_none_expr ~loc = function
     Some
       (Ah.eapply ~loc (Ah.eqident ~loc [ "Nativeint_u"; "min_value" ]) [ unit_arg ~loc ])
   | Int_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int_u"; "min_int" ]) [ unit_arg ~loc ])
+    Some
+      (Ah.eapply
+         ~loc
+         (Ah.eqident ~loc [ "Stdlib_stable"; "Int_u"; "min_int" ])
+         [ unit_arg ~loc ])
   | Char_u_scalar -> None
 ;;
 
@@ -117,9 +127,62 @@ let is_none_body ~loc ~kind ~none_override t_expr =
     Ah.eapply ~loc (equal_fn ~loc kind) [ t_expr; sentinel ]
 ;;
 
+let sexp_of_value_expr ~loc kind value_expr =
+  match kind with
+  | Float_u_scalar ->
+    Ah.eapply ~loc (Ah.eqident ~loc [ "Float_u"; "sexp_of_t" ]) [ value_expr ]
+  | Float32_u_scalar ->
+    Ah.eapply ~loc (Ah.eqident ~loc [ "Float32_u"; "sexp_of_t" ]) [ value_expr ]
+  | Int32_u_scalar ->
+    Ah.eapply ~loc (Ah.eqident ~loc [ "Int32_u"; "sexp_of_t" ]) [ value_expr ]
+  | Int64_u_scalar ->
+    Ah.eapply ~loc (Ah.eqident ~loc [ "Int64_u"; "sexp_of_t" ]) [ value_expr ]
+  | Nativeint_u_scalar ->
+    Ah.eapply ~loc (Ah.eqident ~loc [ "Nativeint_u"; "sexp_of_t" ]) [ value_expr ]
+  | Int8_u_scalar ->
+    Ah.eapply
+      ~loc
+      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_int" ])
+      [ Ah.eapply
+          ~loc
+          (Ah.eqident ~loc [ "Stdlib_stable"; "Int8_u"; "to_int" ])
+          [ value_expr ]
+      ]
+  | Int16_u_scalar ->
+    Ah.eapply
+      ~loc
+      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_int" ])
+      [ Ah.eapply
+          ~loc
+          (Ah.eqident ~loc [ "Stdlib_stable"; "Int16_u"; "to_int" ])
+          [ value_expr ]
+      ]
+  | Int_u_scalar ->
+    Ah.eapply
+      ~loc
+      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_int" ])
+      [ Ah.eapply
+          ~loc
+          (Ah.eqident ~loc [ "Stdlib_stable"; "Int_u"; "to_int" ])
+          [ value_expr ]
+      ]
+  | Char_u_scalar ->
+    Ah.eapply
+      ~loc
+      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_char" ])
+      [ Ah.eapply
+          ~loc
+          (Ah.eqident ~loc [ "Stdlib_stable"; "Char_u"; "to_char" ])
+          [ value_expr ]
+      ]
+;;
+
 let helper_items ~loc = function
-  | Float_u_scalar | Float32_u_scalar | Int32_u_scalar | Int64_u_scalar | Nativeint_u_scalar
-    -> []
+  | Float_u_scalar
+  | Float32_u_scalar
+  | Int32_u_scalar
+  | Int64_u_scalar
+  | Nativeint_u_scalar -> []
   | Int8_u_scalar ->
     [ Ah.primitive_sig
         ~loc

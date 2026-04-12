@@ -17,36 +17,28 @@ let unboxed_record_none_overrides ~loc = function
          List.map
            (fun (field_lid, field_expr) ->
              let field_name =
-               (fun ~loc -> function
-                 | { txt = Lident s; _ } -> s
-                 | _ ->
-                   Location.raise_errorf
-                     ~loc
-                     "ppx_uopt: expected an unqualified field name")
-                 ~loc
-                 field_lid
+               match field_lid with
+               | { txt = Lident s; _ } -> s
+               | _ ->
+                 Location.raise_errorf ~loc "ppx_uopt: expected an unqualified field name"
              in
              field_name, field_expr)
            override_fields
        in
-       let sorted_fields = List.sort (fun (a, _) (b, _) -> String.compare a b) fields in
-       (match sorted_fields with
-        | (f, _) :: rest ->
-          let _ =
-            List.fold_left
-              (fun prev_f (f, _) ->
-                if String.equal prev_f f
-                then
-                  Location.raise_errorf
-                    ~loc
-                    "ppx_uopt: duplicate none override for unboxed-record field '%s'"
-                    f
-                else f)
-              f
-              rest
-          in
-          fields
-        | [] -> [])
+       let sorted = List.sort (fun (a, _) (b, _) -> String.compare a b) fields in
+       let rec check_dups = function
+         | (a, _) :: ((b, _) :: _ as rest) ->
+           if String.equal a b
+           then
+             Location.raise_errorf
+               ~loc
+               "ppx_uopt: duplicate none override for unboxed-record field '%s'"
+               a;
+           check_dups rest
+         | _ -> ()
+       in
+       check_dups sorted;
+       fields
      | Pexp_record_unboxed_product (_, Some _) ->
        Location.raise_errorf
          ~loc
@@ -135,18 +127,16 @@ let contract_helper_items ~loc labels ~need_is_none =
 
 let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
+  List.iter
+    (fun (name, _) ->
+      if not (List.exists (fun ld -> ld.pld_name.txt = name) labels)
+      then
+        Location.raise_errorf
+          ~loc
+          "ppx_uopt: field '%s' from none override not found in type"
+          name)
+    override_exprs;
   let checks =
-    let () =
-      List.iter
-        (fun (name, _) ->
-          if not (List.exists (fun ld -> ld.pld_name.txt = name) labels)
-          then
-            Location.raise_errorf
-              ~loc
-              "ppx_uopt: field '%s' from none override not found in type"
-              name)
-        override_exprs
-    in
     List.map
       (fun (ld : label_declaration) ->
         let field_name = ld.pld_name.txt in

@@ -159,6 +159,20 @@ let gen_sig_items ~loc ~type_name ~t_typ =
          (ptyp_arrow ~loc (Labelled "default") value_typ value_typ))
   ; mk_val "value_exn" (ptyp_arrow ~loc Nolabel t_typ value_typ)
   ; mk_val "unchecked_value" (ptyp_arrow ~loc Nolabel t_typ value_typ)
+  ; mk_val
+      "sexp_of_value"
+      (ptyp_arrow
+         ~loc
+         Nolabel
+         value_typ
+         (ptyp_constr ~loc { txt = Ldot (Ldot (Lident "Sexplib0", "Sexp"), "t"); loc } []))
+  ; mk_val
+      "sexp_of_t"
+      (ptyp_arrow
+         ~loc
+         Nolabel
+         t_typ
+         (ptyp_constr ~loc { txt = Ldot (Ldot (Lident "Sexplib0", "Sexp"), "t"); loc } []))
   ; psig_module
       ~loc
       (module_declaration
@@ -410,6 +424,67 @@ let gen_str_option
                   | #(_, value) -> value]))
       ]
   in
+  let sexp_of_value_body =
+    match type_info with
+    | Scalar kind -> Scalar_gen.sexp_of_value_expr ~loc kind (evar ~loc "v")
+    | Unboxed_record labels ->
+      let field_sexps =
+        List.map
+          (fun (ld : label_declaration) ->
+            let field_name = ld.pld_name.txt in
+            let field_access =
+              pexp_unboxed_field ~loc (evar ~loc "v") { txt = Lident field_name; loc }
+            in
+            let field_sexp =
+              match classify_record_field ~loc ld with
+              | Record_field_scalar kind ->
+                Scalar_gen.sexp_of_value_expr ~loc kind field_access
+              | Record_field_contract base ->
+                eapply
+                  ~loc
+                  (eqident_lid ~loc base [ "Option"; "sexp_of_value" ])
+                  [ field_access ]
+            in
+            [%expr
+              Sexplib0.Sexp.List
+                [ Sexplib0.Sexp.Atom [%e estring ~loc field_name]; [%e field_sexp] ]])
+          labels
+      in
+      let list_expr =
+        List.fold_right
+          (fun elem acc -> [%expr [%e elem] :: [%e acc]])
+          field_sexps
+          [%expr []]
+      in
+      [%expr Sexplib0.Sexp.List [%e list_expr]]
+  in
+  let let_sexp_of_value =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ value_binding
+          ~loc
+          ~pat:(ppat_var ~loc { txt = "sexp_of_value"; loc })
+          ~expr:(fun_one ~loc "v" sexp_of_value_body)
+      ]
+  in
+  let let_sexp_of_t =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ value_binding
+          ~loc
+          ~pat:(ppat_var ~loc { txt = "sexp_of_t"; loc })
+          ~expr:
+            (fun_one
+               ~loc
+               "t"
+               [%expr
+                 Sexplib0.Sexp_conv.sexp_of_option
+                   (fun x -> x)
+                   (if is_none t then None else Some (sexp_of_value (unchecked_value t)))])
+      ]
+  in
   [ suppress_warnings ~loc; type_value; type_t ]
   @ helper_items
   @ contract_items
@@ -421,6 +496,8 @@ let gen_str_option
     ; type_empty ~loc
     ; let_value_exn
     ; let_unchecked_value
+    ; let_sexp_of_value
+    ; let_sexp_of_t
     ; optional_syntax_mod ~loc
     ]
 ;;
@@ -535,6 +612,31 @@ let gen_str_alias ~loc ~type_name ~base =
              (eapply ~loc (m_option [ "unchecked_value" ]) [ evar ~loc "t" ]))
       ]
   in
+  let let_sexp_of_value =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ value_binding
+          ~loc
+          ~pat:(ppat_var ~loc { txt = "sexp_of_value"; loc })
+          ~expr:
+            (fun_one
+               ~loc
+               "v"
+               (eapply ~loc (m_option [ "sexp_of_value" ]) [ evar ~loc "v" ]))
+      ]
+  in
+  let let_sexp_of_t =
+    pstr_value
+      ~loc
+      Nonrecursive
+      [ value_binding
+          ~loc
+          ~pat:(ppat_var ~loc { txt = "sexp_of_t"; loc })
+          ~expr:
+            (fun_one ~loc "t" (eapply ~loc (m_option [ "sexp_of_t" ]) [ evar ~loc "t" ]))
+      ]
+  in
   [ suppress_warnings ~loc
   ; type_value
   ; type_t
@@ -546,6 +648,8 @@ let gen_str_alias ~loc ~type_name ~base =
   ; let_unchecked_value
   ; type_empty ~loc
   ; let_value_exn
+  ; let_sexp_of_value
+  ; let_sexp_of_t
   ; optional_syntax_mod ~loc
   ]
 ;;
