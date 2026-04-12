@@ -8,8 +8,8 @@ val kind_name : scalar_kind -> string
 
 (** Built-in sentinel for [kind], if one exists.
 
-    Floating-point kinds use NaN. Integer-like kinds require an explicit [none = ...]
-    override and therefore return [None]. *)
+    Floating-point kinds use NaN. Integer kinds use their minimum representable value.
+    [char#] has no built-in sentinel and returns [None]. *)
 val default_none_expr : loc:location -> scalar_kind -> expression option
 
 (** Sentinel expression used to represent [none] for [kind].

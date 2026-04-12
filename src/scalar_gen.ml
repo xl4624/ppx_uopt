@@ -15,25 +15,28 @@ let kind_name = function
   | Char_u_scalar -> "char#"
 ;;
 
+let unit_arg ~loc =
+  pexp_construct ~loc { txt = Lident "()"; loc } None
+;;
+
 let default_none_expr ~loc = function
   | Float_u_scalar ->
-    Some
-      (Ah.eapply
-         ~loc
-         (Ah.eqident ~loc [ "Float_u"; "nan" ])
-         [ pexp_construct ~loc { txt = Lident "()"; loc } None ])
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Float_u"; "nan" ]) [ unit_arg ~loc ])
   | Float32_u_scalar ->
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Float32_u"; "nan" ]) [ unit_arg ~loc ])
+  | Int8_u_scalar ->
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int8_u"; "min_int" ]) [ unit_arg ~loc ])
+  | Int16_u_scalar ->
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int16_u"; "min_int" ]) [ unit_arg ~loc ])
+  | Int32_u_scalar ->
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int32_u"; "min_value" ]) [ unit_arg ~loc ])
+  | Int64_u_scalar ->
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int64_u"; "min_value" ]) [ unit_arg ~loc ])
+  | Nativeint_u_scalar ->
     Some
-      (Ah.eapply
-         ~loc
-         (Ah.eqident ~loc [ "Float32_u"; "nan" ])
-         [ pexp_construct ~loc { txt = Lident "()"; loc } None ])
-  | Int32_u_scalar
-  | Int64_u_scalar
-  | Nativeint_u_scalar
-  | Int8_u_scalar
-  | Int16_u_scalar
-  | Int_u_scalar
+      (Ah.eapply ~loc (Ah.eqident ~loc [ "Nativeint_u"; "min_value" ]) [ unit_arg ~loc ])
+  | Int_u_scalar ->
+    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int_u"; "min_int" ]) [ unit_arg ~loc ])
   | Char_u_scalar -> None
 ;;
 
@@ -115,11 +118,8 @@ let is_none_body ~loc ~kind ~none_override t_expr =
 ;;
 
 let helper_items ~loc = function
-  | Float_u_scalar
-  | Float32_u_scalar
-  | Int32_u_scalar
-  | Int64_u_scalar
-  | Nativeint_u_scalar -> []
+  | Float_u_scalar | Float32_u_scalar | Int32_u_scalar | Int64_u_scalar | Nativeint_u_scalar
+    -> []
   | Int8_u_scalar ->
     [ Ah.primitive_sig
         ~loc
