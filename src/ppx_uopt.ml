@@ -159,20 +159,18 @@ let gen_sig_items ~loc ~type_name ~t_typ =
          (ptyp_arrow ~loc (Labelled "default") value_typ value_typ))
   ; mk_val "value_exn" (ptyp_arrow ~loc Nolabel t_typ value_typ)
   ; mk_val "unchecked_value" (ptyp_arrow ~loc Nolabel t_typ value_typ)
-  ; mk_val
-      "sexp_of_value"
-      (ptyp_arrow
-         ~loc
-         Nolabel
-         value_typ
-         (ptyp_constr ~loc { txt = Ldot (Ldot (Lident "Sexplib0", "Sexp"), "t"); loc } []))
-  ; mk_val
-      "sexp_of_t"
-      (ptyp_arrow
-         ~loc
-         Nolabel
-         t_typ
-         (ptyp_constr ~loc { txt = Ldot (Ldot (Lident "Sexplib0", "Sexp"), "t"); loc } []))
+  ; templated_heap_stack_sig_value
+      ~loc
+      ~name:"sexp_of_value"
+      ~arg_type:value_typ
+      ~result_type:
+        (ptyp_constr ~loc { txt = Ldot (Ldot (Lident "Sexplib0", "Sexp"), "t"); loc } [])
+  ; templated_heap_stack_sig_value
+      ~loc
+      ~name:"sexp_of_t"
+      ~arg_type:t_typ
+      ~result_type:
+        (ptyp_constr ~loc { txt = Ldot (Ldot (Lident "Sexplib0", "Sexp"), "t"); loc } [])
   ; psig_module
       ~loc
       (module_declaration
@@ -442,7 +440,9 @@ let gen_str_option
               | Record_field_contract base ->
                 eapply
                   ~loc
-                  (eqident_lid ~loc base [ "Option"; "sexp_of_value" ])
+                  (with_alloc_var
+                     ~loc
+                     (eqident_lid ~loc base [ "Option"; "sexp_of_value" ]))
                   [ field_access ]
             in
             [%expr
@@ -458,32 +458,44 @@ let gen_str_option
       in
       [%expr Sexplib0.Sexp.List [%e list_expr]]
   in
+  let templated_value_binding ~name ~body =
+    let body_with_exclave = with_exclave_if_stack ~loc body in
+    { (value_binding
+         ~loc
+         ~pat:(ppat_var ~loc { txt = name; loc })
+         ~expr:(fun_one ~loc "v" body_with_exclave))
+      with
+      pvb_attributes = [ alloc_heap_stack_attr ~loc; zero_alloc_ignore_attr ~loc ]
+    }
+  in
   let let_sexp_of_value =
-    pstr_value
+    pstr_template
       ~loc
-      Nonrecursive
-      [ value_binding
-          ~loc
-          ~pat:(ppat_var ~loc { txt = "sexp_of_value"; loc })
-          ~expr:(fun_one ~loc "v" sexp_of_value_body)
-      ]
+      (pstr_value
+         ~loc
+         Nonrecursive
+         [ templated_value_binding ~name:"sexp_of_value" ~body:sexp_of_value_body ])
+  in
+  let sexp_of_t_body =
+    [%expr
+      if is_none v
+      then Sexplib0.Sexp.List []
+      else
+        Sexplib0.Sexp.List
+          [ [%e
+              eapply
+                ~loc
+                (with_alloc_var ~loc (evar ~loc "sexp_of_value"))
+                [ [%expr unchecked_value v] ]]
+          ]]
   in
   let let_sexp_of_t =
-    pstr_value
+    pstr_template
       ~loc
-      Nonrecursive
-      [ value_binding
-          ~loc
-          ~pat:(ppat_var ~loc { txt = "sexp_of_t"; loc })
-          ~expr:
-            (fun_one
-               ~loc
-               "t"
-               [%expr
-                 Sexplib0.Sexp_conv.sexp_of_option
-                   (fun x -> x)
-                   (if is_none t then None else Some (sexp_of_value (unchecked_value t)))])
-      ]
+      (pstr_value
+         ~loc
+         Nonrecursive
+         [ templated_value_binding ~name:"sexp_of_t" ~body:sexp_of_t_body ])
   in
   [ suppress_warnings ~loc; type_value; type_t ]
   @ helper_items
@@ -612,30 +624,41 @@ let gen_str_alias ~loc ~type_name ~base =
              (eapply ~loc (m_option [ "unchecked_value" ]) [ evar ~loc "t" ]))
       ]
   in
+  let templated_value_binding ~name ~arg ~body =
+    let body_with_exclave = with_exclave_if_stack ~loc body in
+    { (value_binding
+         ~loc
+         ~pat:(ppat_var ~loc { txt = name; loc })
+         ~expr:(fun_one ~loc arg body_with_exclave))
+      with
+      pvb_attributes = [ alloc_heap_stack_attr ~loc; zero_alloc_ignore_attr ~loc ]
+    }
+  in
   let let_sexp_of_value =
-    pstr_value
+    pstr_template
       ~loc
-      Nonrecursive
-      [ value_binding
-          ~loc
-          ~pat:(ppat_var ~loc { txt = "sexp_of_value"; loc })
-          ~expr:
-            (fun_one
-               ~loc
-               "v"
-               (eapply ~loc (m_option [ "sexp_of_value" ]) [ evar ~loc "v" ]))
-      ]
+      (pstr_value
+         ~loc
+         Nonrecursive
+         [ templated_value_binding
+             ~name:"sexp_of_value"
+             ~arg:"v"
+             ~body:
+               (eapply ~loc (with_alloc_var ~loc (m_option [ "sexp_of_value" ])) [ evar ~loc "v" ])
+         ])
   in
   let let_sexp_of_t =
-    pstr_value
+    pstr_template
       ~loc
-      Nonrecursive
-      [ value_binding
-          ~loc
-          ~pat:(ppat_var ~loc { txt = "sexp_of_t"; loc })
-          ~expr:
-            (fun_one ~loc "t" (eapply ~loc (m_option [ "sexp_of_t" ]) [ evar ~loc "t" ]))
-      ]
+      (pstr_value
+         ~loc
+         Nonrecursive
+         [ templated_value_binding
+             ~name:"sexp_of_t"
+             ~arg:"t"
+             ~body:
+               (eapply ~loc (with_alloc_var ~loc (m_option [ "sexp_of_t" ])) [ evar ~loc "t" ])
+         ])
   in
   [ suppress_warnings ~loc
   ; type_value

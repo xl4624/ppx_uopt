@@ -91,6 +91,58 @@ let primitive_sig ~loc name ty prim =
     (value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[ prim ])
 ;;
 
+let attr_with_expr ~loc name expr =
+  attribute
+    ~loc
+    ~name:{ txt = name; loc }
+    ~payload:(PStr [ pstr_eval ~loc expr [] ])
+;;
+
+let alloc_heap_stack_attr ~loc =
+  attr_with_expr ~loc "alloc" [%expr a @ m = (heap @ global, stack @ local)]
+;;
+
+let zero_alloc_ignore_attr ~loc = attr_with_expr ~loc "zero_alloc" [%expr ignore]
+let alloc_var_attr ~loc = attr_with_expr ~loc "alloc" [%expr a]
+let exclave_if_stack_attr ~loc = attr_with_expr ~loc "exclave_if_stack" [%expr a]
+
+let with_attr attr expr =
+  { expr with pexp_attributes = attr :: expr.pexp_attributes }
+;;
+
+let with_exclave_if_stack ~loc expr = with_attr (exclave_if_stack_attr ~loc) expr
+let with_alloc_var ~loc expr = with_attr (alloc_var_attr ~loc) expr
+
+let pstr_template ~loc item =
+  pstr_extension ~loc ({ txt = "template"; loc }, PStr [ item ]) []
+;;
+
+let psig_template ~loc item =
+  psig_extension
+    ~loc
+    ({ txt = "template"; loc }, PSig (Ppxlib_jane.Ast_builder.Default.signature ~loc [ item ]))
+    []
+;;
+
+let mode_m ~loc : Ppxlib_jane.Shim.Modes.t =
+  [ { txt = Ppxlib_jane.Shim.Mode.Mode "m"; loc } ]
+;;
+
+let templated_heap_stack_sig_value ~loc ~name ~arg_type ~result_type =
+  let modes = mode_m ~loc in
+  let ty =
+    Ppxlib_jane.Ast_builder.Default.ptyp_arrow
+      ~loc
+      { arg_label = Nolabel; arg_modes = modes; arg_type }
+      { result_modes = modes; result_type }
+  in
+  let vd =
+    value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[]
+  in
+  let vd = { vd with pval_attributes = [ alloc_heap_stack_attr ~loc ] } in
+  psig_template ~loc (psig_value ~loc vd)
+;;
+
 let rec string_of_longident = function
   | Lident s -> s
   | Ldot (lid, s) -> string_of_longident lid ^ "." ^ s

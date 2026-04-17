@@ -18,7 +18,11 @@ module Local_field = struct
       | #(_, value) -> value
     ;;
 
-    let sexp_of_value v = Float_u.sexp_of_t v
+    let%template[@alloc a @ m = (heap @ global, stack @ local)] [@inline] [@zero_alloc ignore]
+        sexp_of_value v
+      =
+      (Float_u.sexp_of_t [@alloc a]) v [@exclave_if_stack a]
+    ;;
 
     let sexp_of_t t =
       Sexplib0.Sexp_conv.sexp_of_option

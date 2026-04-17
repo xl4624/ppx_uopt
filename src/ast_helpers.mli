@@ -56,3 +56,36 @@ val string_of_longident : Longident.t -> string
 
     Raises a location error unless the expression is exactly [true] or [false]. *)
 val parse_bool_literal : loc:location -> field_name:string -> expression -> bool
+
+(** [@alloc a @ m = (heap @ global, stack @ local)] template attribute. *)
+val alloc_heap_stack_attr : loc:location -> attribute
+
+(** [@zero_alloc ignore] attribute. *)
+val zero_alloc_ignore_attr : loc:location -> attribute
+
+(** [@alloc a] attribute (for attaching to a function ident during application). *)
+val alloc_var_attr : loc:location -> attribute
+
+(** [@exclave_if_stack a] attribute (for attaching to an expression returning the result). *)
+val exclave_if_stack_attr : loc:location -> attribute
+
+(** Attach [@exclave_if_stack a] to an expression. *)
+val with_exclave_if_stack : loc:location -> expression -> expression
+
+(** Attach [@alloc a] to an expression (typically a function identifier). *)
+val with_alloc_var : loc:location -> expression -> expression
+
+(** Wrap a structure item in [Pstr_extension ("template", ...)], i.e. [let%template ...]. *)
+val pstr_template : loc:location -> structure_item -> structure_item
+
+(** Wrap a signature item in [Psig_extension ("template", ...)], i.e. [val%template ...]. *)
+val psig_template : loc:location -> signature_item -> signature_item
+
+(** Build a [val%template name : arg_type @ m -> result_type @ m
+    \[\@\@alloc a \@ m = (heap \@ global, stack \@ local)\]] signature item. *)
+val templated_heap_stack_sig_value
+  :  loc:location
+  -> name:string
+  -> arg_type:core_type
+  -> result_type:core_type
+  -> signature_item

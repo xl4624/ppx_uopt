@@ -128,53 +128,49 @@ let is_none_body ~loc ~kind ~none_override t_expr =
 ;;
 
 let sexp_of_value_expr ~loc kind value_expr =
+  let atom s = [%expr Sexplib0.Sexp.Atom [%e s]] in
+  let int_atom_of to_int_qid =
+    atom
+      [%expr
+        Stdlib.string_of_int
+          ([%e Ah.eqident ~loc to_int_qid] [%e value_expr])]
+  in
   match kind with
   | Float_u_scalar ->
-    Ah.eapply ~loc (Ah.eqident ~loc [ "Float_u"; "sexp_of_t" ]) [ value_expr ]
+    Ah.eapply
+      ~loc
+      (Ah.with_alloc_var ~loc (Ah.eqident ~loc [ "Float_u"; "sexp_of_t" ]))
+      [ value_expr ]
   | Float32_u_scalar ->
-    Ah.eapply ~loc (Ah.eqident ~loc [ "Float32_u"; "sexp_of_t" ]) [ value_expr ]
+    Ah.eapply
+      ~loc
+      (Ah.with_alloc_var ~loc (Ah.eqident ~loc [ "Float32_u"; "sexp_of_t" ]))
+      [ value_expr ]
   | Int32_u_scalar ->
-    Ah.eapply ~loc (Ah.eqident ~loc [ "Int32_u"; "sexp_of_t" ]) [ value_expr ]
+    Ah.eapply
+      ~loc
+      (Ah.with_alloc_var ~loc (Ah.eqident ~loc [ "Int32_u"; "sexp_of_t" ]))
+      [ value_expr ]
   | Int64_u_scalar ->
-    Ah.eapply ~loc (Ah.eqident ~loc [ "Int64_u"; "sexp_of_t" ]) [ value_expr ]
+    Ah.eapply
+      ~loc
+      (Ah.with_alloc_var ~loc (Ah.eqident ~loc [ "Int64_u"; "sexp_of_t" ]))
+      [ value_expr ]
   | Nativeint_u_scalar ->
-    Ah.eapply ~loc (Ah.eqident ~loc [ "Nativeint_u"; "sexp_of_t" ]) [ value_expr ]
-  | Int8_u_scalar ->
     Ah.eapply
       ~loc
-      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_int" ])
-      [ Ah.eapply
-          ~loc
-          (Ah.eqident ~loc [ "Stdlib_stable"; "Int8_u"; "to_int" ])
-          [ value_expr ]
-      ]
-  | Int16_u_scalar ->
-    Ah.eapply
-      ~loc
-      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_int" ])
-      [ Ah.eapply
-          ~loc
-          (Ah.eqident ~loc [ "Stdlib_stable"; "Int16_u"; "to_int" ])
-          [ value_expr ]
-      ]
-  | Int_u_scalar ->
-    Ah.eapply
-      ~loc
-      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_int" ])
-      [ Ah.eapply
-          ~loc
-          (Ah.eqident ~loc [ "Stdlib_stable"; "Int_u"; "to_int" ])
-          [ value_expr ]
-      ]
+      (Ah.with_alloc_var ~loc (Ah.eqident ~loc [ "Nativeint_u"; "sexp_of_t" ]))
+      [ value_expr ]
+  | Int8_u_scalar -> int_atom_of [ "Stdlib_stable"; "Int8_u"; "to_int" ]
+  | Int16_u_scalar -> int_atom_of [ "Stdlib_stable"; "Int16_u"; "to_int" ]
+  | Int_u_scalar -> int_atom_of [ "Stdlib_stable"; "Int_u"; "to_int" ]
   | Char_u_scalar ->
-    Ah.eapply
-      ~loc
-      (Ah.eqident ~loc [ "Sexplib0"; "Sexp_conv"; "sexp_of_char" ])
-      [ Ah.eapply
-          ~loc
-          (Ah.eqident ~loc [ "Stdlib_stable"; "Char_u"; "to_char" ])
-          [ value_expr ]
-      ]
+    atom
+      [%expr
+        Stdlib.String.make
+          1
+          ([%e Ah.eqident ~loc [ "Stdlib_stable"; "Char_u"; "to_char" ]]
+             [%e value_expr])]
 ;;
 
 let helper_items ~loc = function
