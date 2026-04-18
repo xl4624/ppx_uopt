@@ -133,13 +133,17 @@ let templated_heap_stack_sig_value ~loc ~name ~arg_type ~result_type =
   let ty =
     Ppxlib_jane.Ast_builder.Default.ptyp_arrow
       ~loc
-      { arg_label = Nolabel; arg_modes = modes; arg_type }
+      { arg_label = Nolabel; arg_modes = []; arg_type }
       { result_modes = modes; result_type }
   in
   let vd =
     value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[]
   in
-  let vd = { vd with pval_attributes = [ alloc_heap_stack_attr ~loc ] } in
+  let vd =
+    { vd with
+      pval_attributes = [ alloc_heap_stack_attr ~loc; zero_alloc_ignore_attr ~loc ]
+    }
+  in
   psig_template ~loc (psig_value ~loc vd)
 ;;
 

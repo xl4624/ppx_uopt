@@ -87,3 +87,19 @@ let detect_type_info ~loc (td : type_declaration) =
       ~loc
       "ppx_uopt: only unboxed record products and unboxed scalar types are supported"
 ;;
+
+let detect_sig_info ~loc (td : type_declaration) =
+  match td.ptype_manifest with
+  | Some ct ->
+    let ct_desc = Ppxlib_jane.Shim.Core_type_desc.of_parsetree ct.ptyp_desc in
+    (match ct_desc with
+     | Ptyp_constr ({ txt = Ldot (base, "t"); _ }, []) -> `Alias base
+     | _ -> `Payload)
+  | None ->
+    (match Ppxlib_jane.Shim.Type_declaration.extract_jkind_annotation td with
+     | Some _ -> `Payload
+     | None ->
+       Location.raise_errorf
+         ~loc
+         "ppx_uopt: abstract type with no manifest or jkind annotation is not supported")
+;;

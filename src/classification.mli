@@ -18,3 +18,14 @@ val classify_record_field : loc:location -> label_declaration -> record_field_ki
     Supported declarations are scalar manifest types and unboxed record products. Raises a
     location error for unsupported forms. *)
 val detect_type_info : loc:location -> type_declaration -> type_info
+
+(** Classify the declaration for signature generation.
+
+    Signatures don't need to know the internal structure of a payload, so this accepts
+    abstract types with only a jkind annotation (e.g. [type t : float64]). Returns
+    [`Alias base] when the declaration is a manifest of the form [M.t], otherwise
+    [`Payload]. Raises for abstract types with neither a manifest nor a jkind annotation. *)
+val detect_sig_info
+  :  loc:location
+  -> type_declaration
+  -> [ `Alias of Longident.t | `Payload ]

@@ -754,11 +754,10 @@ let sig_type_decl =
            | None -> false
            | Some expr -> parse_bool_literal ~loc ~field_name:"sentinel" expr
          in
-         let type_info = detect_type_info ~loc td in
          let items =
-           match type_info with
-           | Alias base -> gen_sig_alias ~loc ~type_name ~base
-           | Payload _ ->
+           match detect_sig_info ~loc td with
+           | `Alias base -> gen_sig_alias ~loc ~type_name ~base
+           | `Payload ->
              gen_sig_option ~loc ~type_name ~none_override:none_opt ~sentinel_override
          in
          [ wrap_in_module_sig ~loc "Option" items ]
