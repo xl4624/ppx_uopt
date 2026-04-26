@@ -32,6 +32,12 @@ type record_field_kind =
   (** A field whose representation is generated directly by this deriver. *)
   | Record_field_contract of Longident.t
   (** A field delegated to an existing [M.Option] contract for [M.t]. *)
+  | Record_field_opaque of core_type
+  (** A field whose type is neither a recognised unboxed scalar nor an [M.t] contract. The
+      carried [core_type] is the field's original syntactic type expression. Tagged-mode
+      codegen materialises a placeholder via [(Stdlib.Obj.magic 0 : <core_type>)] - safe
+      for value-layout fields because the payload is never observed by [is_none]. Sentinel
+      mode rejects this kind because it has no equality function to compare against. *)
 
 (** Classification of the payload portion of a type declaration (excludes aliases). *)
 type payload_type_info =

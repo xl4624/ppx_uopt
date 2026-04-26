@@ -81,8 +81,9 @@ val pstr_template : loc:location -> structure_item -> structure_item
 (** Wrap a signature item in [Psig_extension ("template", ...)], i.e. [val%template ...]. *)
 val psig_template : loc:location -> signature_item -> signature_item
 
-(** Build a [val%template name : arg_type @ m -> result_type @ m
-    \[\@\@alloc a \@ m = (heap \@ global, stack \@ local)\]] signature item. *)
+(** Build a
+    [val%template name : arg_type @ m -> result_type @ m [\@\@alloc a \@ m = (heap \@ global, stack \@ local)]]
+    signature item. *)
 val templated_heap_stack_sig_value
   :  loc:location
   -> name:string

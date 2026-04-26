@@ -24,39 +24,17 @@ let scalar_kind_of_core_type (ct : core_type) =
   | _ -> None
 ;;
 
-let classify_record_field ~loc (ld : label_declaration) =
-  let field_name = ld.pld_name.txt in
+let classify_record_field ~loc:_ (ld : label_declaration) =
   match scalar_kind_of_core_type ld.pld_type with
   | Some scalar_kind -> Record_field_scalar scalar_kind
   | None ->
     let ct_desc = Ppxlib_jane.Shim.Core_type_desc.of_parsetree ld.pld_type.ptyp_desc in
     (match ct_desc with
      | Ptyp_constr ({ txt = Ldot (base, "t"); _ }, []) -> Record_field_contract base
-     | Ptyp_constr ({ txt = Ldot (base, _); _ }, []) ->
-       Location.raise_errorf
-         ~loc
-         "ppx_uopt: unsupported field type for field '%s'. Module-qualified contract \
-          fields must have the form %s.t and provide an Option module where \
-          %s.Option.unchecked_value %s.Option.none : %s.t."
-         field_name
-         (Ast_helpers.string_of_longident base)
-         (Ast_helpers.string_of_longident base)
-         (Ast_helpers.string_of_longident base)
-         (Ast_helpers.string_of_longident base)
-     | Ptyp_constr ({ txt = Lident _; _ }, []) ->
-       Location.raise_errorf
-         ~loc
-         "ppx_uopt: unsupported field type for field '%s'. Supported unboxed-record \
-          fields are supported unboxed scalar types or module-qualified contract types \
-          of the form M.t with M.Option.none and M.Option.unchecked_value."
-         field_name
      | _ ->
-       Location.raise_errorf
-         ~loc
-         "ppx_uopt: unsupported field type for field '%s'. Supported unboxed-record \
-          fields are supported unboxed scalar types or module-qualified contract types \
-          of the form M.t with M.Option.none and M.Option.unchecked_value."
-         field_name)
+       (* Anything else is treated as an opaque value-layout field. Tagged
+          mode synthesises a placeholder via [Stdlib.Obj.magic 0]. *)
+       Record_field_opaque ld.pld_type)
 ;;
 
 let detect_type_info ~loc (td : type_declaration) =

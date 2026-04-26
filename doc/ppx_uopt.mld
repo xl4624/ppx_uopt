@@ -44,8 +44,16 @@ end
 
 {2 Unboxed records}
 
-Unboxed records whose fields are all either supported unboxed scalars or
-module-qualified contract fields of the form [M.t] (see {!section-contracts}).
+Unboxed records whose fields are any combination of:
+
+- Supported unboxed scalars (above).
+- Module-qualified contract fields of the form [M.t] (see {!section-contracts}).
+- Any other value-layout field type. In tagged mode the deriver materialises a
+  placeholder via [(Stdlib.Obj.magic 0 : <field_type>)] for the never-observed
+  [Option.none] payload. Sentinel mode requires per-field equality, so any
+  field that is neither a recognised scalar nor an [M.t] contract must come
+  with an explicit override (e.g. [none = #{ x = 0 }]); otherwise sentinel
+  mode rejects the record at deriver time.
 
 {1 Representations}
 
@@ -61,6 +69,23 @@ type token = float# [@@deriving unboxed_option]
 ]}
 
 [Option.is_none] only checks the leading [bool] tag; the payload is ignored.
+
+For records whose fields aren't all recognised scalars or [M.t] contracts, the
+deriver still synthesises a payload via [(Stdlib.Obj.magic 0 : <field_type>)]
+for each opaque field. The cast is well-typed for any value-layout field, and
+the result is never observed because [is_none] only inspects the bool. This
+makes [@@deriving unboxed_option] work on unboxed records that mix value-layout
+fields with contract fields and unboxed scalars, without requiring per-field
+configuration:
+
+{[
+type t = #{ a : int64#; b : int; c : string }
+[@@deriving unboxed_option]
+(* Option.t    = #(bool * t)                                              *)
+(* Option.none = #(false, #{ a = #0L                                      *)
+(*                         ; b = (Stdlib.Obj.magic 0 : int)               *)
+(*                         ; c = (Stdlib.Obj.magic 0 : string) })         *)
+]}
 
 {2 Sentinel-backed via none = ...}
 

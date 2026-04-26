@@ -130,10 +130,7 @@ let is_none_body ~loc ~kind ~none_override t_expr =
 let sexp_of_value_expr ~loc kind value_expr =
   let atom s = [%expr Sexplib0.Sexp.Atom [%e s]] in
   let int_atom_of to_int_qid =
-    atom
-      [%expr
-        Stdlib.string_of_int
-          ([%e Ah.eqident ~loc to_int_qid] [%e value_expr])]
+    atom [%expr Stdlib.string_of_int ([%e Ah.eqident ~loc to_int_qid] [%e value_expr])]
   in
   match kind with
   | Float_u_scalar ->
@@ -169,8 +166,7 @@ let sexp_of_value_expr ~loc kind value_expr =
       [%expr
         Stdlib.String.make
           1
-          ([%e Ah.eqident ~loc [ "Stdlib_stable"; "Char_u"; "to_char" ]]
-             [%e value_expr])]
+          ([%e Ah.eqident ~loc [ "Stdlib_stable"; "Char_u"; "to_char" ]] [%e value_expr])]
 ;;
 
 let helper_items ~loc = function

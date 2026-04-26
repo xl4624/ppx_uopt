@@ -196,6 +196,21 @@ let gen_sig_items ~loc ~type_name ~t_typ =
   ]
 ;;
 
+(* For an opaque value-layout field in tagged mode, emit
+   [(Stdlib.Obj.magic 0 : <field_type>)]. The cast itself is value-to-value
+   (the source [0] and the destination type both have value layout). The
+   payload is never observed by [is_none], so any well-typed placeholder is
+   fine. If a caller has a record whose opaque field is actually unboxed, the
+   OCaml compiler rejects the cast with a layout mismatch error pointing at
+   this generated expression - that's the signal to add a contract module or
+   switch to a recognised scalar form. *)
+let opaque_default_payload_expr ~loc field_type =
+  pexp_constraint
+    ~loc
+    (eapply ~loc (eqident ~loc [ "Stdlib"; "Obj"; "magic" ]) [ eint ~loc 0 ])
+    field_type
+;;
+
 let default_payload_expr ~loc = function
   | Scalar kind -> Scalar_gen.default_payload_expr ~loc kind
   | Unboxed_record labels ->
@@ -209,6 +224,8 @@ let default_payload_expr ~loc = function
             | Record_field_scalar kind -> Scalar_gen.default_payload_expr ~loc kind
             | Record_field_contract _ ->
               evar ~loc (Record_gen.contract_payload_name field_name)
+            | Record_field_opaque field_type ->
+              opaque_default_payload_expr ~loc field_type
           in
           field_lid, field_payload)
         labels
@@ -259,7 +276,7 @@ let gen_str_option
         |> List.filter_map (fun ld ->
           match classify_record_field ~loc ld with
           | Record_field_scalar kind -> Some kind
-          | Record_field_contract _ -> None)
+          | Record_field_contract _ | Record_field_opaque _ -> None)
         |> List.sort_uniq compare_scalar_kind
       in
       scalar_kinds |> List.concat_map (Scalar_gen.helper_items ~loc)
@@ -444,6 +461,13 @@ let gen_str_option
                      ~loc
                      (eqident_lid ~loc base [ "Option"; "sexp_of_value" ]))
                   [ field_access ]
+              | Record_field_opaque _ ->
+                (* No type-aware sexp converter is available. Touch the field
+                   to keep the expression well-typed, then emit an opaque
+                   placeholder. *)
+                [%expr
+                  let _ = [%e field_access] in
+                  Sexplib0.Sexp.Atom "<opaque>"]
             in
             [%expr
               Sexplib0.Sexp.List
@@ -644,7 +668,10 @@ let gen_str_alias ~loc ~type_name ~base =
              ~name:"sexp_of_value"
              ~arg:"v"
              ~body:
-               (eapply ~loc (with_alloc_var ~loc (m_option [ "sexp_of_value" ])) [ evar ~loc "v" ])
+               (eapply
+                  ~loc
+                  (with_alloc_var ~loc (m_option [ "sexp_of_value" ]))
+                  [ evar ~loc "v" ])
          ])
   in
   let let_sexp_of_t =
@@ -657,7 +684,10 @@ let gen_str_alias ~loc ~type_name ~base =
              ~name:"sexp_of_t"
              ~arg:"t"
              ~body:
-               (eapply ~loc (with_alloc_var ~loc (m_option [ "sexp_of_t" ])) [ evar ~loc "t" ])
+               (eapply
+                  ~loc
+                  (with_alloc_var ~loc (m_option [ "sexp_of_t" ]))
+                  [ evar ~loc "t" ])
          ])
   in
   [ suppress_warnings ~loc

@@ -20,6 +20,10 @@ let compare_scalar_kind a b = Stdlib.compare a b
 type record_field_kind =
   | Record_field_scalar of scalar_kind
   | Record_field_contract of Longident.t
+  | Record_field_opaque of core_type
+  (** Field whose type is neither a recognised unboxed scalar nor a module-qualified
+      contract type. The carried [core_type] is the field's original type expression, used
+      as an explicit annotation on the tagged-mode payload placeholder. *)
 
 type payload_type_info =
   | Scalar of scalar_kind

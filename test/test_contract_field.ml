@@ -18,8 +18,10 @@ module Local_field = struct
       | #(_, value) -> value
     ;;
 
-    let%template[@alloc a @ m = (heap @ global, stack @ local)] [@inline] [@zero_alloc ignore]
-        sexp_of_value v
+    let%template[@alloc a @ m = (heap @ global, stack @ local)]
+                [@inline]
+                [@zero_alloc ignore] sexp_of_value
+      v
       =
       (Float_u.sexp_of_t [@alloc a]) v [@exclave_if_stack a]
     ;;

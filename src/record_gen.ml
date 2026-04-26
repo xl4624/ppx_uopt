@@ -16,15 +16,13 @@ let unboxed_record_none_overrides ~loc = function
        let fields =
          List.map
            (fun (field_lid, field_expr) ->
-              let field_name =
-                match field_lid with
-                | { txt = Lident s; _ } -> s
-                | _ ->
-                  Location.raise_errorf
-                    ~loc
-                    "ppx_uopt: expected an unqualified field name"
-              in
-              field_name, field_expr)
+             let field_name =
+               match field_lid with
+               | { txt = Lident s; _ } -> s
+               | _ ->
+                 Location.raise_errorf ~loc "ppx_uopt: expected an unqualified field name"
+             in
+             field_name, field_expr)
            override_fields
        in
        let sorted = List.sort (fun (a, _) (b, _) -> String.compare a b) fields in
@@ -57,26 +55,36 @@ let gen_unboxed_record_none ~loc labels ~none_override =
   let fields =
     List.map
       (fun (ld : label_declaration) ->
-         let field_name = ld.pld_name.txt in
-         let field_lid = { txt = Lident field_name; loc } in
-         let field_none =
-           match List.assoc_opt field_name override_exprs with
-           | Some expr -> expr
-           | None ->
-             (match C.classify_record_field ~loc ld with
-              | Record_field_scalar kind ->
-                (match Scalar_gen.default_none_expr ~loc kind with
-                 | Some expr -> expr
-                 | None ->
-                   Location.raise_errorf
-                     ~loc
-                     "ppx_uopt: unboxed-record field '%s' of type %s requires an \
-                      explicit none sentinel for the whole record"
-                     field_name
-                     (Scalar_gen.kind_name kind))
-              | Record_field_contract _ -> Ah.evar ~loc (contract_payload_name field_name))
-         in
-         field_lid, field_none)
+        let field_name = ld.pld_name.txt in
+        let field_lid = { txt = Lident field_name; loc } in
+        let field_none =
+          match List.assoc_opt field_name override_exprs with
+          | Some expr -> expr
+          | None ->
+            (match C.classify_record_field ~loc ld with
+             | Record_field_scalar kind ->
+               (match Scalar_gen.default_none_expr ~loc kind with
+                | Some expr -> expr
+                | None ->
+                  Location.raise_errorf
+                    ~loc
+                    "ppx_uopt: unboxed-record field '%s' of type %s requires an explicit \
+                     none sentinel for the whole record"
+                    field_name
+                    (Scalar_gen.kind_name kind))
+             | Record_field_contract _ -> Ah.evar ~loc (contract_payload_name field_name)
+             | Record_field_opaque _ ->
+               Location.raise_errorf
+                 ~loc
+                 "ppx_uopt: sentinel-mode unboxed_option needs a per-field sentinel for \
+                  '%s', but the field's type is not a recognised unboxed scalar or \
+                  module-qualified [M.t]. Either provide an explicit override (e.g. \
+                  [@@deriving unboxed_option { none = #{ %s = ... } }]), or drop the \
+                  sentinel options to use the default tagged representation."
+                 field_name
+                 field_name)
+        in
+        field_lid, field_none)
       labels
   in
   pexp_record_unboxed_product ~loc fields None
@@ -87,7 +95,7 @@ let contract_helper_items ~loc labels ~need_is_none =
   |> List.concat_map (fun (ld : label_declaration) ->
     let field_name = ld.pld_name.txt in
     match C.classify_record_field ~loc ld with
-    | Record_field_scalar _ -> []
+    | Record_field_scalar _ | Record_field_opaque _ -> []
     | Record_field_contract base ->
       [ pstr_value
           ~loc
@@ -131,33 +139,40 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
   List.iter
     (fun (name, _) ->
-       if not (List.exists (fun ld -> ld.pld_name.txt = name) labels)
-       then
-         Location.raise_errorf
-           ~loc
-           "ppx_uopt: field '%s' from none override not found in type"
-           name)
+      if not (List.exists (fun ld -> ld.pld_name.txt = name) labels)
+      then
+        Location.raise_errorf
+          ~loc
+          "ppx_uopt: field '%s' from none override not found in type"
+          name)
     override_exprs;
   let checks =
     List.map
       (fun (ld : label_declaration) ->
-         let field_name = ld.pld_name.txt in
-         let field_access =
-           pexp_unboxed_field ~loc t_expr { txt = Lident field_name; loc }
-         in
-         match C.classify_record_field ~loc ld with
-         | Record_field_scalar kind ->
-           let field_none_override = List.assoc_opt field_name override_exprs in
-           Scalar_gen.is_none_body
-             ~loc
-             ~kind
-             ~none_override:field_none_override
-             field_access
-         | Record_field_contract _ ->
-           Ah.eapply
-             ~loc
-             (Ah.evar ~loc (contract_is_none_name field_name))
-             [ field_access ])
+        let field_name = ld.pld_name.txt in
+        let field_access =
+          pexp_unboxed_field ~loc t_expr { txt = Lident field_name; loc }
+        in
+        match C.classify_record_field ~loc ld with
+        | Record_field_scalar kind ->
+          let field_none_override = List.assoc_opt field_name override_exprs in
+          Scalar_gen.is_none_body
+            ~loc
+            ~kind
+            ~none_override:field_none_override
+            field_access
+        | Record_field_contract _ ->
+          Ah.eapply
+            ~loc
+            (Ah.evar ~loc (contract_is_none_name field_name))
+            [ field_access ]
+        | Record_field_opaque _ ->
+          Location.raise_errorf
+            ~loc
+            "ppx_uopt: sentinel-mode is_none cannot compare field '%s': its type is not \
+             a recognised unboxed scalar or module-qualified [M.t]. Drop the sentinel \
+             options to use the default tagged representation."
+            field_name)
       labels
   in
   match checks with

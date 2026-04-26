@@ -48,8 +48,10 @@ end
 Scalars: `float#`, `float32#`, `int32#`, `int64#`, `nativeint#`, `int8#`, `int16#`,
 `int#`, `char#`
 
-Unboxed records whose fields are all either supported scalars or module-qualified contract
-fields of the form `M.t` (see [Contract fields](#contract-fields)).
+Unboxed records. Tagged mode supports records with arbitrary fields. Sentinel
+mode requires each field to be a supported scalar or a module-qualified
+contract field of the form `M.t` (see [Contract fields](#contract-fields)),
+unless an explicit override is given (e.g. `none = #{ x = 0 }`).
 
 ## Representations
 
@@ -64,7 +66,10 @@ type token = float# [@@deriving unboxed_option]
 (* Option.some v = #(true, v)     *)
 ```
 
-`is_none` only checks the leading tag; the payload is irrelevant.
+`is_none` only checks the leading tag; the payload is irrelevant. This is why
+tagged mode works for any record: each field of the `none` payload uses its
+default sentinel when one exists, and otherwise is filled in with
+`Obj.magic 0`, which is safe because the payload is never observed.
 
 ### Sentinel via `none = ...`
 
