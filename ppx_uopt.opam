@@ -10,7 +10,7 @@ tags: ["ppx" "oxcaml" "unboxed" "option" "deriving"]
 homepage: "https://github.com/xl4624/ppx_uopt"
 bug-reports: "https://github.com/xl4624/ppx_uopt/issues"
 depends: [
-  "dune" {>= "3.22"}
+  "dune" {>= "3.20"}
   "ocaml" {>= "5.0"}
   "ppxlib" {>= "0.32"}
   "ppxlib_jane"
