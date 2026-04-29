@@ -1,7 +1,6 @@
 (** AST generation helpers for unboxed-record payloads. *)
 
 open Ppxlib
-open Uopt_types
 
 (** Generated local binding name for the default payload extracted from a delegated
     contract field's [Option.none]. *)

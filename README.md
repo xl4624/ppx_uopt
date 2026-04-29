@@ -66,10 +66,7 @@ type token = float# [@@deriving unboxed_option]
 (* Option.some v = #(true, v)     *)
 ```
 
-`is_none` only checks the leading tag; the payload is irrelevant. This is why
-tagged mode works for any record: each field of the `none` payload uses its
-default sentinel when one exists, and otherwise is filled in with
-`Obj.magic 0`, which is safe because the payload is never observed.
+`is_none` only checks the leading tag; the payload is irrelevant.
 
 ### Sentinel via `none = ...`
 

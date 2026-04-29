@@ -9,12 +9,30 @@ let repr_kind_of_options ~none_override ~sentinel_override =
 ;;
 
 let suppress_warnings ~loc =
+  (* The generated [Option] module emits boilerplate that callers may not
+     touch, so silence the three "unused-*" warnings that would otherwise
+     fire inside it:
+       -32 (unused-value-declaration): the templated [sexp_of_t] /
+            [sexp_of_value] each expand to both a heap and a [__stack] copy,
+            and the [let _ = ...] silencer below only references the heap
+            one, leaving the stack copy nominally unused.
+       -34 (unused-type-declaration): [type _uopt_empty = |] is used only
+            inside [value_exn]'s refutation pattern; if the deriver runs on
+            a type whose [value_exn] is never called, the empty type ends
+            up unreferenced. The nested [type nonrec value = t] /
+            [type nonrec t = value] aliases would also flag here when the
+            [Option] module is generated but not consumed.
+       -60 (unused-module): the nested
+            [module Optional_syntax = struct module Optional_syntax = ...]
+            wrapping is part of the [%optional] syntax extension's lookup
+            convention; if no caller uses [%optional] on this type, the
+            outer wrapper is flagged as unused. *)
   pstr_attribute
     ~loc
     (attribute
        ~loc
        ~name:{ txt = "ocaml.warning"; loc }
-       ~payload:(PStr [ pstr_eval ~loc (estring ~loc "-34-60") [] ]))
+       ~payload:(PStr [ pstr_eval ~loc (estring ~loc "-32-34-60") [] ]))
 ;;
 
 let type_empty ~loc =

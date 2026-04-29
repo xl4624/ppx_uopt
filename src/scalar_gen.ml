@@ -18,10 +18,11 @@ let kind_name = function
 let unit_arg ~loc = pexp_construct ~loc { txt = Lident "()"; loc } None
 
 let default_none_expr ~loc = function
-  | Float_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Float_u"; "nan" ]) [ unit_arg ~loc ])
-  | Float32_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Float32_u"; "nan" ]) [ unit_arg ~loc ])
+  | Float_u_scalar -> Some (Ah.eqident ~loc [ "Float_u"; "nan" ])
+  | Float32_u_scalar -> Some (Ah.eqident ~loc [ "Float32_u"; "nan" ])
+  | Int32_u_scalar -> Some (Ah.eqident ~loc [ "Int32_u"; "min_value" ])
+  | Int64_u_scalar -> Some (Ah.eqident ~loc [ "Int64_u"; "min_value" ])
+  | Nativeint_u_scalar -> Some (Ah.eqident ~loc [ "Nativeint_u"; "min_value" ])
   | Int8_u_scalar ->
     Some
       (Ah.eapply
@@ -34,13 +35,6 @@ let default_none_expr ~loc = function
          ~loc
          (Ah.eqident ~loc [ "Stdlib_stable"; "Int16_u"; "min_int" ])
          [ unit_arg ~loc ])
-  | Int32_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int32_u"; "min_value" ]) [ unit_arg ~loc ])
-  | Int64_u_scalar ->
-    Some (Ah.eapply ~loc (Ah.eqident ~loc [ "Int64_u"; "min_value" ]) [ unit_arg ~loc ])
-  | Nativeint_u_scalar ->
-    Some
-      (Ah.eapply ~loc (Ah.eqident ~loc [ "Nativeint_u"; "min_value" ]) [ unit_arg ~loc ])
   | Int_u_scalar ->
     Some
       (Ah.eapply
@@ -85,16 +79,8 @@ let none_expr ~loc ~kind ~none_override =
 ;;
 
 let default_payload_expr ~loc = function
-  | Float_u_scalar ->
-    Ah.eapply
-      ~loc
-      (Ah.eqident ~loc [ "Float_u"; "nan" ])
-      [ pexp_construct ~loc { txt = Lident "()"; loc } None ]
-  | Float32_u_scalar ->
-    Ah.eapply
-      ~loc
-      (Ah.eqident ~loc [ "Float32_u"; "nan" ])
-      [ pexp_construct ~loc { txt = Lident "()"; loc } None ]
+  | Float_u_scalar -> Ah.eqident ~loc [ "Float_u"; "nan" ]
+  | Float32_u_scalar -> Ah.eqident ~loc [ "Float32_u"; "nan" ]
   | Int32_u_scalar -> Ah.to_unboxed_constant_expr ~loc [%expr 0l]
   | Int64_u_scalar -> Ah.to_unboxed_constant_expr ~loc [%expr 0L]
   | Nativeint_u_scalar -> Ah.to_unboxed_constant_expr ~loc [%expr 0n]

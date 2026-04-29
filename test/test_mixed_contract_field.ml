@@ -7,7 +7,7 @@ module Local_field = struct
     type value = t
     type t = #(bool * value)
 
-    let none = #(false, Float_u.nan ())
+    let none = #(false, Float_u.nan)
     let some v = #(true, v)
 
     let is_none = function

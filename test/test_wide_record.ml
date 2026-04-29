@@ -24,7 +24,7 @@ let () =
   assert (Float_u.is_nan n.#d);
   assert (Float_u.is_nan n.#e);
   (* Every field independently gates is_none *)
-  let nan = Float_u.nan () in
+  let nan = Float_u.nan in
   assert (not (Wide.Option.is_none #{ Wide.a = #1s; b = #0l; c = #0L; d = nan; e = nan }));
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #1l; c = #0L; d = nan; e = nan }));
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #1L; d = nan; e = nan }));

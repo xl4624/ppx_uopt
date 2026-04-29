@@ -39,7 +39,7 @@ let () =
   assert (Float_u.is_nan on_m.#b);
   assert (Float_u.is_nan on.#c);
   (* Changing any field at any depth makes it some *)
-  let nan = Float_u.nan () in
+  let nan = Float_u.nan in
   assert (not (Inner.Option.is_none #1.0));
   assert (not (Middle.Option.is_none #{ Middle.a = #1.0; b = nan }));
   assert (not (Middle.Option.is_none #{ Middle.a = nan; b = #1.0 }));

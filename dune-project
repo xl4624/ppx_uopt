@@ -16,7 +16,7 @@
 (package
  (name ppx_uopt)
  (synopsis "[@@deriving unboxed_option]")
- (description "PPX deriver for allocation-free Option helpers on unboxed types")
+ (description "Derives zero-alloc Option modules for unboxed types")
  (depends
   (ocaml (>= 5.0))
   (ppxlib (>= 0.32))

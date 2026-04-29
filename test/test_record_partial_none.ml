@@ -13,8 +13,8 @@ let () =
   assert (Packed_point.Option.is_none Packed_point.Option.none);
   assert (eq_int8_u Packed_point.Option.none.#x #0s);
   assert (Float_u.is_nan Packed_point.Option.none.#y);
-  assert (Packed_point.Option.is_none #{ Packed_point.x = #0s; y = Float_u.nan () });
-  assert (not (Packed_point.Option.is_none #{ Packed_point.x = #1s; y = Float_u.nan () }));
+  assert (Packed_point.Option.is_none #{ Packed_point.x = #0s; y = Float_u.nan });
+  assert (not (Packed_point.Option.is_none #{ Packed_point.x = #1s; y = Float_u.nan }));
   assert (not (Packed_point.Option.is_none #{ Packed_point.x = #0s; y = #7.0 }));
   let p_same_x = Packed_point.Option.some #{ Packed_point.x = #0s; y = #7.0 } in
   assert (Packed_point.Option.is_some p_same_x);
