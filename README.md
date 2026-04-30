@@ -105,6 +105,16 @@ type packed_pair = #{ x : int8#; y : float# }
 (* is_none checks BOTH fields: #{ x = #15s; y = #7.0 } is some, not none *)
 ```
 
+Override on an opaque field - any field whose type isn't a recognised scalar or
+contract `M.t` works in sentinel mode as long as the user provides its sentinel
+value. `is_none` then compares that field with `Stdlib.( = )` (polymorphic
+equality):
+
+```ocaml
+type record = #{ id : int; tag : string }
+[@@deriving unboxed_option { none = #{ id = -1; tag = "" } }]
+```
+
 ## Contract fields
 
 A record field of type `M.t` is supported when the generated code can satisfy this

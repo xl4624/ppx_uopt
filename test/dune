@@ -28,7 +28,8 @@
   test_sexp_scalar
   test_sexp_record
   test_sexp_nested
-  test_record_opaque_field)
+  test_record_opaque_field
+  test_record_opaque_sentinel)
  (libraries unboxed test_helpers)
  (preprocess
   (pps ppx_uopt ppx_jane)))

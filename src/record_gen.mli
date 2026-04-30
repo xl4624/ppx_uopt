@@ -46,7 +46,9 @@ val contract_helper_items
 
     Every field is checked against that field's sentinel. With a partial [none = #{ ... }]
     override, explicitly listed fields use the override while omitted fields still use
-    their synthesized default sentinels. *)
+    their synthesized default sentinels. Opaque fields (neither a recognised scalar nor a
+    contract [M.t]) are only allowed when the user supplies an override; they are then
+    compared with [Stdlib.( = )]. *)
 val gen_unboxed_record_is_none_sentinel
   :  loc:location
   -> label_declaration list

@@ -167,12 +167,18 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
             (Ah.evar ~loc (contract_is_none_name field_name))
             [ field_access ]
         | Record_field_opaque _ ->
-          Location.raise_errorf
-            ~loc
-            "ppx_uopt: sentinel-mode is_none cannot compare field '%s': its type is not \
-             a recognised unboxed scalar or module-qualified [M.t]. Drop the sentinel \
-             options to use the default tagged representation."
-            field_name)
+          (match List.assoc_opt field_name override_exprs with
+           | Some override_expr ->
+             [%expr Stdlib.( = ) [%e field_access] [%e override_expr]]
+           | None ->
+             Location.raise_errorf
+               ~loc
+               "ppx_uopt: sentinel-mode is_none cannot compare field '%s': its type is \
+                not a recognised unboxed scalar or module-qualified [M.t], and no \
+                explicit [none = #{ %s = ... }] override was given. Provide an override \
+                or drop the sentinel options to use the default tagged representation."
+               field_name
+               field_name))
       labels
   in
   match checks with
