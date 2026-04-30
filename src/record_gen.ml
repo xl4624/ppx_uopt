@@ -73,16 +73,11 @@ let gen_unboxed_record_none ~loc labels ~none_override =
                     field_name
                     (Scalar_gen.kind_name kind))
              | Record_field_contract _ -> Ah.evar ~loc (contract_payload_name field_name)
-             | Record_field_opaque _ ->
-               Location.raise_errorf
-                 ~loc
-                 "ppx_uopt: sentinel-mode unboxed_option needs a per-field sentinel for \
-                  '%s', but the field's type is not a recognised unboxed scalar or \
-                  module-qualified [M.t]. Either provide an explicit override (e.g. \
-                  [@@deriving unboxed_option { none = #{ %s = ... } }]), or drop the \
-                  sentinel options to use the default tagged representation."
-                 field_name
-                 field_name)
+             | Record_field_opaque field_type ->
+               (* Field is not in the override and its type has no synthesised
+                  default, so it's payload-only: [is_none] never inspects it.
+                  Use [Obj.magic 0] as a never-observed placeholder. *)
+               Ah.opaque_default_payload_expr ~loc field_type)
         in
         field_lid, field_none)
       labels
@@ -135,6 +130,12 @@ let contract_helper_items ~loc labels ~need_is_none =
       else [])
 ;;
 
+(* [is_none] checks only the fields the user listed in [none = #{ ... }]. Fields
+   omitted from the override are payload-only and may freely take any value.
+   Equivalent to designating each listed field as a sentinel discriminator.
+
+   Under [sentinel = true] (no override at all), every field is checked using
+   its synthesised default - that mode is "all fields are discriminators". *)
 let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
   List.iter
@@ -146,6 +147,14 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
           "ppx_uopt: field '%s' from none override not found in type"
           name)
     override_exprs;
+  let labels_to_check =
+    match none_override with
+    | None -> labels
+    | Some _ ->
+      List.filter
+        (fun (ld : label_declaration) -> List.mem_assoc ld.pld_name.txt override_exprs)
+        labels
+  in
   let checks =
     List.map
       (fun (ld : label_declaration) ->
@@ -175,17 +184,18 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
                ~loc
                "ppx_uopt: sentinel-mode is_none cannot compare field '%s': its type is \
                 not a recognised unboxed scalar or module-qualified [M.t], and no \
-                explicit [none = #{ %s = ... }] override was given. Provide an override \
-                or drop the sentinel options to use the default tagged representation."
+                explicit override was given. Either list it in [none = #{ %s = ... }] \
+                or drop it from the type / use tagged mode."
                field_name
                field_name))
-      labels
+      labels_to_check
   in
   match checks with
   | [] ->
     Location.raise_errorf
       ~loc
-      "ppx_uopt: cannot generate is_none for unboxed record with no checkable fields"
+      "ppx_uopt: [@@deriving unboxed_option { none = #{ ... } }] needs at least one \
+       field in the override to discriminate [is_none]; got an empty record."
   | first :: rest ->
     List.fold_left (fun acc check -> [%expr [%e acc] && [%e check]]) first rest
 ;;

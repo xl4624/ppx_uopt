@@ -91,6 +91,19 @@ let primitive_sig ~loc name ty prim =
     (value_description ~loc ~name:{ txt = name; loc } ~type_:ty ~prim:[ prim ])
 ;;
 
+(* For an opaque value-layout field with no usable default, emit
+   [(Stdlib.Obj.magic 0 : <field_type>)]. Used as a placeholder in the [none]
+   constant for fields that the user did not list in [none = #{ ... }]: those
+   fields are never inspected by [is_none] under partial-override semantics, so
+   any well-typed value works. The field's type must be value-layout for the
+   cast to type-check. *)
+let opaque_default_payload_expr ~loc field_type =
+  pexp_constraint
+    ~loc
+    (eapply ~loc (eqident ~loc [ "Stdlib"; "Obj"; "magic" ]) [ eint ~loc 0 ])
+    field_type
+;;
+
 let attr_with_expr ~loc name expr =
   attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr [ pstr_eval ~loc expr [] ])
 ;;

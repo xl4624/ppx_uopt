@@ -2,7 +2,10 @@ open Test_helpers
 open! Float_u
 
 (* Five-field record with a partial none override.
-   int8/int32/int64 use explicit sentinels; float fields fall back to NaN. *)
+   Only the listed fields (a, b, c) gate is_none; the omitted float fields
+   d and e are payload-only and may take any value. The synthesised [none]
+   still has [Float_u.nan ()] in d/e so the constant is well-formed, but
+   that placeholder is never inspected. *)
 
 module Wide = struct
   type t =
@@ -23,13 +26,15 @@ let () =
   assert (Int64_u.equal n.#c #0L);
   assert (Float_u.is_nan n.#d);
   assert (Float_u.is_nan n.#e);
-  (* Every field independently gates is_none *)
   let nan = Float_u.nan in
+  (* Listed fields gate is_none. *)
   assert (not (Wide.Option.is_none #{ Wide.a = #1s; b = #0l; c = #0L; d = nan; e = nan }));
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #1l; c = #0L; d = nan; e = nan }));
   assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #1L; d = nan; e = nan }));
-  assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = #1.0; e = nan }));
-  assert (not (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = nan; e = #1.0 }));
+  (* Omitted fields don't: d/e can be anything when a/b/c match the override. *)
+  assert (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = #1.0; e = nan });
+  assert (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = nan; e = #1.0 });
+  assert (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = #1.0; e = #2.0 });
   (* Exact sentinel matches none *)
   assert (Wide.Option.is_none #{ Wide.a = #0s; b = #0l; c = #0L; d = nan; e = nan });
   (* some/value_exn round-trip *)

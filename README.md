@@ -96,24 +96,46 @@ type packed_pair = #{ x : int8#; y : int32# }
 [@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
 ```
 
-Partial override - omitted fields use their default sentinels:
+Partial override - the listed fields are the `is_none` discriminators; omitted
+fields are payload-only:
 
 ```ocaml
 type packed_pair = #{ x : int8#; y : float# }
 [@@deriving unboxed_option { none = #{ x = #15s } }]
 (* synthesized none = #{ x = #15s; y = Float_u.nan () } *)
-(* is_none checks BOTH fields: #{ x = #15s; y = #7.0 } is some, not none *)
+(* is_none v = (v.#x = #15s) - y can be anything *)
+(* #{ x = #15s; y = #7.0 } is none *)
+(* #{ x = #1s;  y = nan }  is some *)
 ```
 
-Override on an opaque field - any field whose type isn't a recognised scalar or
-contract `M.t` works in sentinel mode as long as the user provides its sentinel
-value. `is_none` then compares that field with `Stdlib.( = )` (polymorphic
-equality):
+This means **write only the field that discriminates and you get a single
+typed compare**. Use a full override to check every field:
+
+```ocaml
+type packed_pair = #{ x : int8#; y : int32# }
+[@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
+(* is_none v = (v.#x = #12s) && (v.#y = #0l) - both must match *)
+```
+
+Override on an opaque field - any field whose type isn't a recognised scalar
+or contract `M.t` works in sentinel mode as long as the user provides its
+sentinel value. The opaque field is compared with `Stdlib.( = )` (polymorphic
+equality), which is fine for primitive immediates and small structural values
+but lowers to `caml_equal` for arrays / nested records:
 
 ```ocaml
 type record = #{ id : int; tag : string }
-[@@deriving unboxed_option { none = #{ id = -1; tag = "" } }]
+[@@deriving unboxed_option { none = #{ id = -1 } }]
+(* synthesized none.#tag = (Stdlib.Obj.magic 0 : string), never observed *)
+(* is_none v = (v.#id = -1) - tag is payload-only *)
 ```
+
+If a discriminator's field type is an immediate (`int`, `bool`, `char`) or
+unboxed scalar (`int#`, `float#`, etc.), the generated `is_none` is statically
+`[@@zero_alloc]`. Multi-field overrides that include an opaque structural type
+(e.g. an `int array`) fall back to `caml_equal` which the static checker can't
+verify - prefer a single-field discriminator on a primitive when you want
+guaranteed zero-alloc.
 
 ## Contract fields
 
@@ -151,8 +173,12 @@ type record = #{ x : Foo.t } [@@deriving unboxed_option]
 
 - **Tagged mode** - explicit semantics; correctness does not depend on a reserved sentinel.
 - **`none = ...`** - compact representation when a specific value can be safely reserved.
-- **`sentinel = true`** - sentinel-backed with synthesized defaults (floats only).
-- **Partial record `none`** - `is_none` still checks every field, so only the exact
-  synthesized sentinel is `none`.
+  Listed fields are the `is_none` discriminators; omitted fields are payload-only.
+- **`sentinel = true`** - sentinel-backed with synthesized defaults (floats only). For
+  records this checks every field against its synthesized default; use it when every
+  field is genuinely a discriminator.
+- **Single-field discriminator** - the simplest path for records: write
+  `none = #{ id = ... }` naming just the discriminator. `is_none` becomes one typed
+  compare and is statically `[@@zero_alloc]`.
 
 See [test/](./test/) for more examples.

@@ -49,6 +49,10 @@ val to_unboxed_constant_expr : loc:location -> expression -> expression
 (** Primitive declaration helper used for generated support bindings. *)
 val primitive_sig : loc:location -> string -> core_type -> string -> structure_item
 
+(** Build [(Stdlib.Obj.magic 0 : <field_type>)] for use as a never-observed placeholder
+    payload in opaque value-layout fields. *)
+val opaque_default_payload_expr : loc:location -> core_type -> expression
+
 (** Render a [Longident.t] for diagnostics. *)
 val string_of_longident : Longident.t -> string
 

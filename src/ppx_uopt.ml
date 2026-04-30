@@ -214,21 +214,6 @@ let gen_sig_items ~loc ~type_name ~t_typ =
   ]
 ;;
 
-(* For an opaque value-layout field in tagged mode, emit
-   [(Stdlib.Obj.magic 0 : <field_type>)]. The cast itself is value-to-value
-   (the source [0] and the destination type both have value layout). The
-   payload is never observed by [is_none], so any well-typed placeholder is
-   fine. If a caller has a record whose opaque field is actually unboxed, the
-   OCaml compiler rejects the cast with a layout mismatch error pointing at
-   this generated expression - that's the signal to add a contract module or
-   switch to a recognised scalar form. *)
-let opaque_default_payload_expr ~loc field_type =
-  pexp_constraint
-    ~loc
-    (eapply ~loc (eqident ~loc [ "Stdlib"; "Obj"; "magic" ]) [ eint ~loc 0 ])
-    field_type
-;;
-
 let default_payload_expr ~loc = function
   | Scalar kind -> Scalar_gen.default_payload_expr ~loc kind
   | Unboxed_record labels ->
