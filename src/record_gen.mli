@@ -42,6 +42,16 @@ val contract_helper_items
   -> need_is_none:bool
   -> structure_item list
 
+(** Whether the sentinel-mode [is_none] predicate generated for [labels] under
+    [none_override] would use polymorphic equality on at least one opaque field. Such
+    [is_none] bodies cannot be marked [@@zero_alloc]; callers gate the assume-style
+    annotation on this. *)
+val unboxed_record_is_none_uses_poly_eq
+  :  loc:location
+  -> label_declaration list
+  -> none_override:expression option
+  -> bool
+
 (** Build the [is_none] predicate for a sentinel-backed unboxed record.
 
     Every field is checked against that field's sentinel. With a partial [none = #{ ... }]

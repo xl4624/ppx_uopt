@@ -130,6 +130,25 @@ let contract_helper_items ~loc labels ~need_is_none =
       else [])
 ;;
 
+(* True iff the sentinel-mode [is_none] for these labels would use [Stdlib.( = )] on
+   an opaque field. Such uses lower to [caml_equal], which the static [@zero_alloc]
+   checker conservatively treats as potentially-allocating, so callers emit
+   [@@zero_alloc assume] on the affected functions. *)
+let unboxed_record_is_none_uses_poly_eq ~loc labels ~none_override =
+  let override_exprs = unboxed_record_none_overrides ~loc none_override in
+  let is_in_override (ld : label_declaration) =
+    match none_override with
+    | None -> true (* sentinel = true: every field checked *)
+    | Some _ -> List.mem_assoc ld.pld_name.txt override_exprs
+  in
+  List.exists
+    (fun (ld : label_declaration) ->
+      match C.classify_record_field ~loc ld with
+      | Record_field_opaque _ -> is_in_override ld
+      | Record_field_scalar _ | Record_field_contract _ -> false)
+    labels
+;;
+
 (* [is_none] checks only the fields the user listed in [none = #{ ... }]. Fields
    omitted from the override are payload-only and may freely take any value.
    Equivalent to designating each listed field as a sentinel discriminator.

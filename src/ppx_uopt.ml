@@ -63,7 +63,10 @@ let raise_match ~loc ~type_name =
     ]
 ;;
 
-let optional_syntax_mod ~loc =
+let optional_syntax_mod ~loc ~assume_zero_alloc =
+  let attach_is_none =
+    if assume_zero_alloc then add_inline_zero_alloc_assume else add_inline_zero_alloc
+  in
   pstr_module
     ~loc
     (module_binding
@@ -87,7 +90,7 @@ let optional_syntax_mod ~loc =
                                 ~loc
                                 ~pat:(ppat_var ~loc { txt = "is_none"; loc })
                                 ~expr:
-                                  (add_inline_zero_alloc
+                                  (attach_is_none
                                      ~loc
                                      (fun_one
                                         ~loc
@@ -251,6 +254,17 @@ let gen_str_option
        ~loc
        "ppx_uopt: custom is_none overrides require an explicit none = ... sentinel"
    | Sentinel_repr, _ | Tagged_repr, None -> ());
+  (* When sentinel-mode [is_none] falls back to polymorphic equality on an opaque
+     field, the body lowers to [caml_equal] which the static [@@zero_alloc] checker
+     conservatively treats as potentially-allocating. Use [@@zero_alloc assume] on
+     [is_none] and the transitive callers ([is_some], [value], [value_exn], and
+     [Optional_syntax.is_none]) so callers continue to see them as zero-alloc. *)
+  let assume_zero_alloc =
+    match repr_kind, type_info, is_none_override with
+    | Sentinel_repr, Unboxed_record labels, None ->
+      Record_gen.unboxed_record_is_none_uses_poly_eq ~loc labels ~none_override
+    | _ -> false
+  in
   let type_value = type_value_decl ~loc ~type_name in
   let type_t =
     pstr_type
@@ -344,6 +358,7 @@ let gen_str_option
       ~loc
       Nonrecursive
       [ mk_val_binding
+          ~assume_zero_alloc
           ~loc
           "is_none"
           (fun_one
@@ -374,6 +389,7 @@ let gen_str_option
       ~loc
       Nonrecursive
       [ mk_val_binding
+          ~assume_zero_alloc
           ~loc
           "is_some"
           (fun_one
@@ -393,6 +409,7 @@ let gen_str_option
       ~loc
       Nonrecursive
       [ mk_val_binding
+          ~assume_zero_alloc
           ~loc
           "value"
           (fun_t_default
@@ -411,6 +428,7 @@ let gen_str_option
       ~loc
       Nonrecursive
       [ mk_val_binding
+          ~assume_zero_alloc
           ~loc
           "value_exn"
           (fun_one
@@ -537,7 +555,7 @@ let gen_str_option
     ; let_unchecked_value
     ; let_sexp_of_value
     ; let_sexp_of_t
-    ; optional_syntax_mod ~loc
+    ; optional_syntax_mod ~loc ~assume_zero_alloc
     ]
 ;;
 
@@ -706,7 +724,7 @@ let gen_str_alias ~loc ~type_name ~base =
   ; let_value_exn
   ; let_sexp_of_value
   ; let_sexp_of_t
-  ; optional_syntax_mod ~loc
+  ; optional_syntax_mod ~loc ~assume_zero_alloc:false
   ]
 ;;
 

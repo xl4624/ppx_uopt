@@ -8,9 +8,20 @@ open Ppxlib
 (** Attach [@inline] and [@zero_alloc] to a generated expression. *)
 val add_inline_zero_alloc : loc:location -> expression -> expression
 
+(** Attach [@inline] and [@zero_alloc assume] to a generated expression. The [assume]
+    variant tells the checker to trust the annotation rather than verify it; used for
+    bodies whose actual runtime cost is zero-alloc but whose static analysis isn't
+    (e.g. [Stdlib.( = )] which lowers to [caml_equal]). *)
+val add_inline_zero_alloc_assume : loc:location -> expression -> expression
+
 (** Build a value binding named [name], automatically marking the body [@inline] and
-    [@zero_alloc]. *)
-val mk_val_binding : loc:location -> string -> expression -> value_binding
+    [@zero_alloc] (or [@zero_alloc assume] when [assume_zero_alloc] is true). *)
+val mk_val_binding
+  :  ?assume_zero_alloc:bool
+  -> loc:location
+  -> string
+  -> expression
+  -> value_binding
 
 (** [fun_one ~arg_name body] builds [fun arg_name -> body]. *)
 val fun_one : loc:location -> string -> expression -> expression

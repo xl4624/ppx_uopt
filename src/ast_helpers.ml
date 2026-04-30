@@ -1,22 +1,36 @@
 open Ppxlib
 open Ast_builder.Default
 
+let bare_attr ~loc name = attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr [])
+
 let add_inline_zero_alloc ~loc expr =
   { expr with
     pexp_attributes =
-      (fun ~loc name -> attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr []))
-        ~loc
-        "inline"
-      :: (fun ~loc name -> attribute ~loc ~name:{ txt = name; loc } ~payload:(PStr []))
-           ~loc
-           "zero_alloc"
-      :: expr.pexp_attributes
+      bare_attr ~loc "inline" :: bare_attr ~loc "zero_alloc" :: expr.pexp_attributes
   }
 ;;
 
-let mk_val_binding ~loc name body =
+let zero_alloc_assume_attr ~loc =
+  attribute
+    ~loc
+    ~name:{ txt = "zero_alloc"; loc }
+    ~payload:(PStr [ pstr_eval ~loc [%expr assume] [] ])
+;;
+
+let add_inline_zero_alloc_assume ~loc expr =
+  { expr with
+    pexp_attributes =
+      bare_attr ~loc "inline" :: zero_alloc_assume_attr ~loc :: expr.pexp_attributes
+  }
+;;
+
+let mk_val_binding ?(assume_zero_alloc = false) ~loc name body =
   let pat = ppat_var ~loc { txt = name; loc } in
-  let expr = add_inline_zero_alloc ~loc body in
+  let expr =
+    if assume_zero_alloc
+    then add_inline_zero_alloc_assume ~loc body
+    else add_inline_zero_alloc ~loc body
+  in
   value_binding ~loc ~pat ~expr
 ;;
 
