@@ -106,11 +106,10 @@ let primitive_sig ~loc name ty prim =
 ;;
 
 (* For an opaque value-layout field with no usable default, emit
-   [(Stdlib.Obj.magic 0 : <field_type>)]. Used as a placeholder in the [none]
-   constant for fields that the user did not list in [none = #{ ... }]: those
-   fields are never inspected by [is_none] under partial-override semantics, so
-   any well-typed value works. The field's type must be value-layout for the
-   cast to type-check. *)
+   [(Stdlib.Obj.magic 0 : <field_type>)]. Used as a placeholder in the [none] constant for
+   fields that the user did not list in [none = #{ ... }]: those fields are never
+   inspected by [is_none] under partial-override semantics, so any well-typed value works.
+   The field's type must be value-layout for the cast to type-check. *)
 let opaque_default_payload_expr ~loc field_type =
   pexp_constraint
     ~loc
@@ -172,10 +171,12 @@ let rec string_of_longident = function
   | Lapply _ -> assert false
 ;;
 
-let parse_bool_literal ~loc ~field_name expr =
+(* True iff [expr] is a syntactic identifier reference matching one of [paths]. Used by
+   the NaN-detection paths, where we want to recognise canonical [Float_u.nan] / [Float.nan]
+   etc. but not arbitrary expressions that happen to evaluate to NaN. *)
+let expr_is_qualified_ident ~loc expr paths =
   let desc = Ppxlib_jane.Shim.Expression_desc.of_parsetree expr.pexp_desc ~loc in
   match desc with
-  | Pexp_construct ({ txt = Lident "true"; _ }, None) -> true
-  | Pexp_construct ({ txt = Lident "false"; _ }, None) -> false
-  | _ -> Location.raise_errorf ~loc "ppx_uopt: %s must be a boolean literal" field_name
+  | Pexp_ident { txt; _ } -> List.mem (string_of_longident txt) paths
+  | _ -> false
 ;;

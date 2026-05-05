@@ -7,6 +7,20 @@ module C = Classification
 let contract_payload_name field_name = "_uopt_contract_" ^ field_name ^ "_payload"
 let contract_is_none_name field_name = "_uopt_contract_" ^ field_name ^ "_is_none"
 
+let immediate_equal_fn ~loc = function
+  | Imm_int -> Ah.eqident ~loc [ "Stdlib"; "Int"; "equal" ]
+  | Imm_bool -> Ah.eqident ~loc [ "Stdlib"; "Bool"; "equal" ]
+  | Imm_char -> Ah.eqident ~loc [ "Stdlib"; "Char"; "equal" ]
+  | Imm_float -> Ah.eqident ~loc [ "Stdlib"; "Float"; "equal" ]
+;;
+
+let immediate_default_expr ~loc = function
+  | Imm_int -> [%expr 0]
+  | Imm_bool -> [%expr false]
+  | Imm_char -> [%expr '\000']
+  | Imm_float -> [%expr 0.]
+;;
+
 let unboxed_record_none_overrides ~loc = function
   | None -> []
   | Some expr ->
@@ -73,10 +87,11 @@ let gen_unboxed_record_none ~loc labels ~none_override =
                     field_name
                     (Scalar_gen.kind_name kind))
              | Record_field_contract _ -> Ah.evar ~loc (contract_payload_name field_name)
+             | Record_field_immediate imm -> immediate_default_expr ~loc imm
              | Record_field_opaque field_type ->
-               (* Field is not in the override and its type has no synthesised
-                  default, so it's payload-only: [is_none] never inspects it.
-                  Use [Obj.magic 0] as a never-observed placeholder. *)
+               (* Field is not in the override and its type has no synthesised default, so
+                  it's payload-only: [is_none] never inspects it. Use [Obj.magic 0] as a
+                  never-observed placeholder. *)
                Ah.opaque_default_payload_expr ~loc field_type)
         in
         field_lid, field_none)
@@ -90,7 +105,7 @@ let contract_helper_items ~loc labels ~need_is_none =
   |> List.concat_map (fun (ld : label_declaration) ->
     let field_name = ld.pld_name.txt in
     match C.classify_record_field ~loc ld with
-    | Record_field_scalar _ | Record_field_opaque _ -> []
+    | Record_field_scalar _ | Record_field_immediate _ | Record_field_opaque _ -> []
     | Record_field_contract base ->
       [ pstr_value
           ~loc
@@ -105,7 +120,7 @@ let contract_helper_items ~loc labels ~need_is_none =
               ~expr:
                 (Ah.eapply
                    ~loc
-                   (Ah.eqident_lid ~loc base [ "Option"; "unchecked_value" ])
+                   (Ah.eqident_lid ~loc base [ "Option"; "unsafe_value" ])
                    [ Ah.eqident_lid ~loc base [ "Option"; "none" ] ])
           ]
       ]
@@ -130,31 +145,24 @@ let contract_helper_items ~loc labels ~need_is_none =
       else [])
 ;;
 
-(* True iff the sentinel-mode [is_none] for these labels would use [Stdlib.( = )] on
-   an opaque field. Such uses lower to [caml_equal], which the static [@zero_alloc]
-   checker conservatively treats as potentially-allocating, so callers emit
-   [@@zero_alloc assume] on the affected functions. *)
+(* True iff the sentinel-mode [is_none] for these labels would use [Stdlib.( = )] on an
+   opaque field. Such uses lower to [caml_equal], which the static [@zero_alloc] checker
+   conservatively treats as potentially-allocating, so callers emit [@@zero_alloc assume]
+   on the affected functions. *)
 let unboxed_record_is_none_uses_poly_eq ~loc labels ~none_override =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
-  let is_in_override (ld : label_declaration) =
-    match none_override with
-    | None -> true (* sentinel = true: every field checked *)
-    | Some _ -> List.mem_assoc ld.pld_name.txt override_exprs
-  in
   List.exists
     (fun (ld : label_declaration) ->
       match C.classify_record_field ~loc ld with
-      | Record_field_opaque _ -> is_in_override ld
-      | Record_field_scalar _ | Record_field_contract _ -> false)
+      | Record_field_opaque _ -> List.mem_assoc ld.pld_name.txt override_exprs
+      | Record_field_scalar _ | Record_field_contract _ | Record_field_immediate _ ->
+        false)
     labels
 ;;
 
-(* [is_none] checks only the fields the user listed in [none = #{ ... }]. Fields
-   omitted from the override are payload-only and may freely take any value.
-   Equivalent to designating each listed field as a sentinel discriminator.
-
-   Under [sentinel = true] (no override at all), every field is checked using
-   its synthesised default - that mode is "all fields are discriminators". *)
+(* [is_none] checks only the fields the user listed in [none = #{ ... }]. Fields omitted
+   from the override are payload-only and may freely take any value. Each listed field
+   acts as a sentinel discriminator. *)
 let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
   List.iter
@@ -167,12 +175,9 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
           name)
     override_exprs;
   let labels_to_check =
-    match none_override with
-    | None -> labels
-    | Some _ ->
-      List.filter
-        (fun (ld : label_declaration) -> List.mem_assoc ld.pld_name.txt override_exprs)
-        labels
+    List.filter
+      (fun (ld : label_declaration) -> List.mem_assoc ld.pld_name.txt override_exprs)
+      labels
   in
   let checks =
     List.map
@@ -194,19 +199,22 @@ let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
             ~loc
             (Ah.evar ~loc (contract_is_none_name field_name))
             [ field_access ]
+        | Record_field_immediate imm ->
+          let override_expr = List.assoc field_name override_exprs in
+          (* For [Imm_float], detect a NaN override and emit [Float.is_nan] instead of
+             [Float.equal] (which is always [false] against NaN by IEEE 754). *)
+          (match imm with
+           | Imm_float
+             when Ah.expr_is_qualified_ident
+                    ~loc
+                    override_expr
+                    [ "Float.nan"; "Stdlib.Float.nan" ] ->
+             Ah.eapply ~loc (Ah.eqident ~loc [ "Stdlib"; "Float"; "is_nan" ]) [ field_access ]
+           | _ ->
+             Ah.eapply ~loc (immediate_equal_fn ~loc imm) [ field_access; override_expr ])
         | Record_field_opaque _ ->
-          (match List.assoc_opt field_name override_exprs with
-           | Some override_expr ->
-             [%expr Stdlib.( = ) [%e field_access] [%e override_expr]]
-           | None ->
-             Location.raise_errorf
-               ~loc
-               "ppx_uopt: sentinel-mode is_none cannot compare field '%s': its type is \
-                not a recognised unboxed scalar or module-qualified [M.t], and no \
-                explicit override was given. Either list it in [none = #{ %s = ... }] \
-                or drop it from the type / use tagged mode."
-               field_name
-               field_name))
+          let override_expr = List.assoc field_name override_exprs in
+          [%expr Stdlib.( = ) [%e field_access] [%e override_expr]])
       labels_to_check
   in
   match checks with

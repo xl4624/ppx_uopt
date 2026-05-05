@@ -12,7 +12,6 @@
   test_int16_none
   test_int_none
   test_char_none
-  test_float_sentinel_default
   test_int8_sentinel_default
   test_int32_sentinel_default
   test_int64_sentinel_default
@@ -23,13 +22,17 @@
   test_mixed_contract_field
   test_nested_derived_contract
   test_triple_nested_tagged
-  test_triple_nested_sentinel
   test_wide_record
   test_sexp_scalar
   test_sexp_record
   test_sexp_nested
   test_record_opaque_field
-  test_record_opaque_sentinel)
+  test_record_opaque_sentinel
+  test_immediate_only
+  test_alias
+  test_nan_sentinel)
  (libraries unboxed test_helpers)
+ (flags
+  (:standard -w -32-34))
  (preprocess
   (pps ppx_uopt ppx_jane)))

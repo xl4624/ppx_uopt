@@ -10,8 +10,8 @@ val add_inline_zero_alloc : loc:location -> expression -> expression
 
 (** Attach [@inline] and [@zero_alloc assume] to a generated expression. The [assume]
     variant tells the checker to trust the annotation rather than verify it; used for
-    bodies whose actual runtime cost is zero-alloc but whose static analysis isn't
-    (e.g. [Stdlib.( = )] which lowers to [caml_equal]). *)
+    bodies whose actual runtime cost is zero-alloc but whose static analysis isn't (e.g.
+    [Stdlib.( = )] which lowers to [caml_equal]). *)
 val add_inline_zero_alloc_assume : loc:location -> expression -> expression
 
 (** Build a value binding named [name], automatically marking the body [@inline] and
@@ -67,10 +67,13 @@ val opaque_default_payload_expr : loc:location -> core_type -> expression
 (** Render a [Longident.t] for diagnostics. *)
 val string_of_longident : Longident.t -> string
 
-(** Parse a boolean literal field in the deriving payload.
-
-    Raises a location error unless the expression is exactly [true] or [false]. *)
-val parse_bool_literal : loc:location -> field_name:string -> expression -> bool
+(** True iff [expr] is a syntactic identifier reference matching one of [paths] (e.g.
+    ["Float_u.nan"]). Used by NaN detection in float-kind sentinel overrides. *)
+val expr_is_qualified_ident
+  :  loc:location
+  -> expression
+  -> string list
+  -> bool
 
 (** [@alloc a @ m = (heap @ global, stack @ local)] template attribute. *)
 val alloc_heap_stack_attr : loc:location -> attribute

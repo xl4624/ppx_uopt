@@ -2,9 +2,9 @@ open Test_helpers
 open! Float_u
 
 (* Partial-override semantics: [is_none] checks only the fields listed in
-   [none = #{ ... }]. Omitted fields are payload-only and freely take any
-   value, even values matching the synthesised default for that field's
-   type. To make [is_none] check all fields, list them all explicitly. *)
+   [none = #{ ... }]. Omitted fields are payload-only and freely take any value, even
+   values matching the synthesised default for that field's type. To make [is_none] check
+   all fields, list them all explicitly. *)
 
 module Packed_point = struct
   type t =
@@ -16,8 +16,8 @@ end
 
 let () =
   assert (Packed_point.Option.is_none Packed_point.Option.none);
-  (* Synthesised [none] still has a default for [y]; the partial-override
-     comment in the README explains [Float_u.nan ()] for omitted float fields. *)
+  (* Synthesised [none] still has a default for [y]; the partial-override comment in the
+     README explains [Float_u.nan ()] for omitted float fields. *)
   assert (eq_int8_u Packed_point.Option.none.#x #0s);
   assert (Float_u.is_nan Packed_point.Option.none.#y);
   (* Only [x] discriminates: y can be anything when x = #0s. *)

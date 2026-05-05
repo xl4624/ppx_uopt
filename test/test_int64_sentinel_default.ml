@@ -1,5 +1,5 @@
 module Int64_opt = struct
-  type t = int64# [@@deriving unboxed_option { sentinel = true }]
+  type t = int64# [@@deriving unboxed_option { none = Int64_u.min_value }]
 end
 
 let () =

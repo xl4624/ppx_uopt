@@ -1,7 +1,7 @@
-(* Sentinel-mode unboxed_option on a record whose fields aren't recognised
-   unboxed scalars or [M.t] contract types. The user provides an explicit
-   [none] override and the deriver compares opaque fields with polymorphic
-   equality. Mirrors test_record_opaque_field.ml but uses sentinel mode. *)
+(* Sentinel-mode unboxed_option on a record whose fields aren't recognised unboxed scalars
+   or [M.t] contract types. The user provides an explicit [none] override and the deriver
+   compares opaque fields with polymorphic equality. Mirrors test_record_opaque_field.ml
+   but uses sentinel mode. *)
 
 module Mixed = struct
   type t =

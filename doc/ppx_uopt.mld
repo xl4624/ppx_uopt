@@ -17,7 +17,7 @@ module Option : sig
   val is_some         : t -> bool
   val value           : t -> default:value -> value
   val value_exn       : t -> value
-  val unchecked_value : t -> value
+  val unsafe_value    : t -> value
 
   module Optional_syntax : sig
     module Optional_syntax : sig
@@ -48,12 +48,16 @@ Unboxed records whose fields are any combination of:
 
 - Supported unboxed scalars (above).
 - Module-qualified contract fields of the form [M.t] (see {!section-contracts}).
+- Immediates ([int], [bool], [char]). Sentinel-mode [is_none] uses the
+  type-specialised [Stdlib.Int.equal]/[Stdlib.Bool.equal]/[Stdlib.Char.equal] and
+  the predicate is statically [\@\@zero_alloc].
 - Any other value-layout field type. In tagged mode the deriver materialises a
   placeholder via [(Stdlib.Obj.magic 0 : <field_type>)] for the never-observed
-  [Option.none] payload. Sentinel mode requires per-field equality, so any
-  field that is neither a recognised scalar nor an [M.t] contract must come
-  with an explicit override (e.g. [none = #{ x = 0 }]); otherwise sentinel
-  mode rejects the record at deriver time.
+  [Option.none] payload. In sentinel mode an opaque field may appear in the
+  [none = #{ ... }] override (compared with [Stdlib.( = )]) or be omitted - if
+  omitted, it is payload-only and [is_none] does not inspect it. When an opaque
+  field is a discriminator the generated [is_none] keeps a [\@zero_alloc assume]
+  annotation since [caml_equal] is conservatively flagged by the static checker.
 
 {1 Representations}
 
@@ -70,20 +74,19 @@ type token = float# [@@deriving unboxed_option]
 
 [Option.is_none] only checks the leading [bool] tag; the payload is ignored.
 
-For records whose fields aren't all recognised scalars or [M.t] contracts, the
-deriver still synthesises a payload via [(Stdlib.Obj.magic 0 : <field_type>)]
-for each opaque field. The cast is well-typed for any value-layout field, and
-the result is never observed because [is_none] only inspects the bool. This
-makes [@@deriving unboxed_option] work on unboxed records that mix value-layout
-fields with contract fields and unboxed scalars, without requiring per-field
-configuration:
+For records that mix scalars, immediates, contracts, and opaque value-layout
+fields, the deriver synthesises a never-observed payload for each field: scalars
+get a typed default, immediates get a literal ([0]/[false]/['\000']), contracts
+delegate to [M.Option.none], and opaque fields get [(Stdlib.Obj.magic 0 :
+<field_type>)]. The payload is well-typed but never inspected because [is_none]
+only reads the bool tag:
 
 {[
 type t = #{ a : int64#; b : int; c : string }
 [@@deriving unboxed_option]
 (* Option.t    = #(bool * t)                                              *)
 (* Option.none = #(false, #{ a = #0L                                      *)
-(*                         ; b = (Stdlib.Obj.magic 0 : int)               *)
+(*                         ; b = 0                                        *)
 (*                         ; c = (Stdlib.Obj.magic 0 : string) })         *)
 ]}
 
@@ -96,14 +99,10 @@ type token = int8# [@@deriving unboxed_option { none = #0s }]
 (* Option.some is the identity *)
 ]}
 
-{2 Sentinel-backed via sentinel = true}
-
-Uses a synthesized default sentinel for the type (NaN for floats; requires an explicit
-[none] for integer-like types):
-
-{[
-type token = float# [@@deriving unboxed_option { sentinel = true }]
-]}
+[is_none] is a typed equality against the sentinel. NaN sentinels are recognised
+syntactically ([Float_u.nan], [Float32_u.nan], [Float.nan], and [Stdlib.]-prefixed
+variants) and generate an [is_nan]-based [is_none] since IEEE 754 makes NaN unequal
+to itself.
 
 {1 Unboxed record examples}
 
@@ -112,15 +111,19 @@ Full record sentinel:
 {[
 type packed_pair = #{ x : int8#; y : int32# }
 [@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
+(* is_none v = (v.#x = #12s) && (v.#y = #0l) - both must match *)
 ]}
 
-Partial override (omitted fields use their default sentinels):
+Partial override - the listed fields are the [is_none] discriminators; omitted fields are
+payload-only:
 
 {[
 type packed_pair = #{ x : int8#; y : float# }
 [@@deriving unboxed_option { none = #{ x = #15s } }]
-(* synthesized none = #{ x = #15s; y = Float_u.nan () } *)
-(* is_none checks BOTH fields, so #{ x = #15s; y = #7.0 } is some, not none *)
+(* synthesized none = #{ x = #15s; y = Float_u.nan } - y is never observed *)
+(* is_none v = (v.#x = #15s) - y can be anything *)
+(* #{ x = #15s; y = #7.0 } is none *)
+(* #{ x = #1s;  y = nan }  is some *)
 ]}
 
 {1:contracts Contract fields}
@@ -129,8 +132,8 @@ A record field of type [M.t] is accepted when the generated code can rely on thi
 contract:
 
 {[
-M.Option.none            : M.Option.t
-M.Option.unchecked_value : M.Option.t -> M.t
+M.Option.none         : M.Option.t
+M.Option.unsafe_value : M.Option.t -> M.t
 ]}
 
 In sentinel-backed record mode, generated [is_none] checks also require:
@@ -147,8 +150,8 @@ module Foo = struct
   module Option = struct
     type value = t
     type t = #(bool * value)
-    let none = #(false, Float_u.nan ())
-    let unchecked_value = function #(_, v) -> v
+    let none = #(false, Float_u.nan)
+    let unsafe_value = function #(_, v) -> v
   end
 end
 
@@ -161,7 +164,8 @@ type record = #{ x : Foo.t } [@@deriving unboxed_option]
   sentinel value.
 - {b [none = ...]}: compact sentinel-backed representation when you have a value that can
   safely be reserved.
-- {b [sentinel = true]}: sentinel-backed with synthesized defaults (float NaN; not
-  available for integer types without an explicit [none]).
-- {b Partial record [none]}: [is_none] still checks every field, so only the exact
-  synthesized sentinel value is [none].
+- {b Partial record [none]}: only the listed fields are checked; omitted fields are
+  payload-only and may freely take any value. Each listed field is an [is_none]
+  discriminator.
+
+[Option.value_exn] raises [Invalid_argument] on [none].

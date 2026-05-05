@@ -9,7 +9,7 @@ module Int32_opt = struct
 end
 
 module Int64_opt = struct
-  type t = int64# [@@deriving unboxed_option { sentinel = true }]
+  type t = int64# [@@deriving unboxed_option { none = Int64_u.min_value }]
 end
 
 let sexp_to_string sexp = Sexplib0.Sexp.to_string sexp
@@ -27,10 +27,10 @@ let () =
   (* Int32 some *)
   let some_sexp = Int32_opt.Option.sexp_of_t (Int32_opt.Option.some #42l) in
   assert (String.equal (sexp_to_string some_sexp) "(42)");
-  (* Int64 sentinel default none *)
+  (* Int64 explicit min_value sentinel none *)
   let none_sexp = Int64_opt.Option.sexp_of_t Int64_opt.Option.none in
   assert (String.equal (sexp_to_string none_sexp) "()");
-  (* Int64 sentinel default some *)
+  (* Int64 explicit min_value sentinel some *)
   let some_sexp = Int64_opt.Option.sexp_of_t (Int64_opt.Option.some #99L) in
   assert (String.equal (sexp_to_string some_sexp) "(99)")
 ;;

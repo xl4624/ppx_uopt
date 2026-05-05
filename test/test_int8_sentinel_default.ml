@@ -1,5 +1,5 @@
 module Int8_opt = struct
-  type t = int8# [@@deriving unboxed_option { sentinel = true }]
+  type t = int8# [@@deriving unboxed_option { none = Stdlib_stable.Int8_u.min_int () }]
 end
 
 external eq_int8_u : int8# -> int8# -> bool = "%int8#_equal"

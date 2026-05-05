@@ -8,7 +8,7 @@ let () =
   let none = Scalar_value.Option.none in
   assert (Scalar_value.Option.is_none none);
   assert (not (Scalar_value.Option.is_some none));
-  assert (Float_u.is_nan (Scalar_value.Option.unchecked_value none));
+  assert (Float_u.is_nan (Scalar_value.Option.unsafe_value none));
   let v = Scalar_value.Option.some #3.14 in
   assert (Scalar_value.Option.is_some v);
   assert (not (Scalar_value.Option.is_none v));

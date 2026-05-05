@@ -29,10 +29,8 @@ val none_expr
     a reserved sentinel. *)
 val default_payload_expr : loc:location -> scalar_kind -> expression
 
-(** Build the [is_none] predicate for a scalar expression.
-
-    Floating-point sentinels use [Float_u.is_nan]/[Float32_u.is_nan] when no explicit
-    override is given; all other cases compare against [none_expr]. *)
+(** Build the [is_none] predicate for a scalar expression as a typed equality against the
+    sentinel expression returned by {!none_expr}. *)
 val is_none_body
   :  loc:location
   -> kind:scalar_kind

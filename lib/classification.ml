@@ -24,17 +24,29 @@ let scalar_kind_of_core_type (ct : core_type) =
   | _ -> None
 ;;
 
+let immediate_kind_of_core_type (ct : core_type) =
+  match Ppxlib_jane.Shim.Core_type_desc.of_parsetree ct.ptyp_desc with
+  | Ptyp_constr ({ txt = Lident "int"; _ }, []) -> Some Imm_int
+  | Ptyp_constr ({ txt = Lident "bool"; _ }, []) -> Some Imm_bool
+  | Ptyp_constr ({ txt = Lident "char"; _ }, []) -> Some Imm_char
+  | Ptyp_constr ({ txt = Lident "float"; _ }, []) -> Some Imm_float
+  | _ -> None
+;;
+
 let classify_record_field ~loc:_ (ld : label_declaration) =
   match scalar_kind_of_core_type ld.pld_type with
   | Some scalar_kind -> Record_field_scalar scalar_kind
   | None ->
-    let ct_desc = Ppxlib_jane.Shim.Core_type_desc.of_parsetree ld.pld_type.ptyp_desc in
-    (match ct_desc with
-     | Ptyp_constr ({ txt = Ldot (base, "t"); _ }, []) -> Record_field_contract base
-     | _ ->
-       (* Anything else is treated as an opaque value-layout field. Tagged
-          mode synthesises a placeholder via [Stdlib.Obj.magic 0]. *)
-       Record_field_opaque ld.pld_type)
+    (match immediate_kind_of_core_type ld.pld_type with
+     | Some imm -> Record_field_immediate imm
+     | None ->
+       let ct_desc = Ppxlib_jane.Shim.Core_type_desc.of_parsetree ld.pld_type.ptyp_desc in
+       (match ct_desc with
+        | Ptyp_constr ({ txt = Ldot (base, "t"); _ }, []) -> Record_field_contract base
+        | _ ->
+          (* Anything else is treated as an opaque value-layout field. Tagged mode
+             synthesises a placeholder via [Stdlib.Obj.magic 0]. *)
+          Record_field_opaque ld.pld_type))
 ;;
 
 let detect_type_info ~loc (td : type_declaration) =

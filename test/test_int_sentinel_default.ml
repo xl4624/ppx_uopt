@@ -1,7 +1,7 @@
 open Test_helpers
 
 module Int_opt = struct
-  type t = int# [@@deriving unboxed_option { sentinel = true }]
+  type t = int# [@@deriving unboxed_option { none = Stdlib_stable.Int_u.min_int () }]
 end
 
 let () =

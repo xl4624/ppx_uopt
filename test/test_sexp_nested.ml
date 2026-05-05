@@ -1,7 +1,7 @@
 open! Float_u
 
 module Inner = struct
-  type t = float# [@@deriving unboxed_option { sentinel = true }]
+  type t = float# [@@deriving unboxed_option]
 end
 
 module Outer = struct

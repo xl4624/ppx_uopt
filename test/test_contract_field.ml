@@ -14,7 +14,7 @@ module Local_field = struct
       | #(is_some, _) -> not is_some
     ;;
 
-    let unchecked_value = function
+    let unsafe_value = function
       | #(_, value) -> value
     ;;
 
@@ -29,7 +29,7 @@ module Local_field = struct
     let sexp_of_t t =
       Sexplib0.Sexp_conv.sexp_of_option
         (fun x -> x)
-        (if is_none t then None else Some (sexp_of_value (unchecked_value t)))
+        (if is_none t then None else Some (sexp_of_value (unsafe_value t)))
     ;;
   end
 end
@@ -41,7 +41,7 @@ end
 let () =
   assert (Nested_contract.Option.is_none Nested_contract.Option.none);
   assert (
-    Float_u.is_nan (Nested_contract.Option.unchecked_value Nested_contract.Option.none).#x);
+    Float_u.is_nan (Nested_contract.Option.unsafe_value Nested_contract.Option.none).#x);
   let v = Nested_contract.Option.some #{ Nested_contract.x = #2.5 } in
   assert (Nested_contract.Option.is_some v);
   assert (Float_u.equal (Nested_contract.Option.value_exn v).#x #2.5);

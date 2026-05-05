@@ -8,7 +8,7 @@ let () =
       let _ = Scalar_value.Option.value_exn Scalar_value.Option.none in
       false
     with
-    | Failure _ -> true
+    | Invalid_argument _ -> true
   in
   assert raised
 ;;

@@ -1,17 +1,20 @@
 # ppx_uopt
 
-`[@@deriving unboxed_option]` generates an allocation-free `Option` module for unboxed
-scalar types and unboxed records in OxCaml.
+`[@@deriving unboxed_option]` generates an allocation-free `Option` module for
+unboxed scalar types and unboxed records in OxCaml.
+
+`'a option` allocates a heap block on every `Some x`, and `'a or_null`
+requires `'a : value` so it can't wrap unboxed types like `float#` or
+`#{ ... }`. `ppx_uopt` does neither: `some x` is `#(true, x)` in tagged mode,
+or `x` itself with one reserved sentinel value in sentinel mode.
 
 ## Installation
 
-Requires an OxCaml switch. To install:
+Requires an OxCaml switch.
 
 ```
 opam pin add ppx_uopt git+https://github.com/xl4624/ppx_uopt.git
 ```
-
-Then add `ppx_uopt` to your library's `preprocess` stanza:
 
 ```dune
 (library
@@ -31,8 +34,8 @@ module Option : sig
   val is_none         : t -> bool
   val is_some         : t -> bool
   val value           : t -> default:value -> value
-  val value_exn       : t -> value
-  val unchecked_value : t -> value
+  val value_exn       : t -> value          (* raises Invalid_argument on none *)
+  val unsafe_value    : t -> value          (* skip the is_none check *)
 
   module Optional_syntax : sig
     module Optional_syntax : sig
@@ -43,73 +46,51 @@ module Option : sig
 end
 ```
 
+The nested `Optional_syntax.Optional_syntax` module wires this type up to Jane
+Street's [`[%optional]`](https://github.com/janestreet/ppx_optional) syntax
+extension, if you use it.
+
 ## Supported types
 
-Scalars: `float#`, `float32#`, `int32#`, `int64#`, `nativeint#`, `int8#`, `int16#`,
-`int#`, `char#`
+Scalars: `float#`, `float32#`, `int32#`, `int64#`, `nativeint#`, `int8#`,
+`int16#`, `int#`, `char#`.
 
-Unboxed records. Tagged mode supports records with arbitrary fields. Sentinel
-mode requires each field to be a supported scalar or a module-qualified
-contract field of the form `M.t` (see [Contract fields](#contract-fields)),
-unless an explicit override is given (e.g. `none = #{ x = 0 }`).
+Unboxed records, with any mix of scalars, immediates (`int`, `bool`, `char`,
+`float`), contract types `M.t` (see [Contract fields](#contract-fields)), or any
+other value-layout field.
 
 ## Representations
 
 ### Tagged (default)
 
-When no `none = ...` override is given, `Option.t = #(bool * value)`:
+When no `none = ...` is given, the deriver uses an unboxed bool-tagged pair,
+`Option.t = #(bool * value)`:
 
 ```ocaml
 type token = float# [@@deriving unboxed_option]
-(* Option.t    = #(bool * float#) *)
-(* Option.none = #(false, 0.)     *)
-(* Option.some v = #(true, v)     *)
+(* Option.none   = #(false, 0.) *)
+(* Option.some v = #(true, v)   *)
 ```
 
-`is_none` only checks the leading tag; the payload is irrelevant.
+`is_none` only inspects the bool tag, so the payload of `none` doesn't have to
+be a special value. Tagged mode works on any record, including ones with
+`string`, `array`, or other heap-allocated fields.
 
 ### Sentinel via `none = ...`
 
-`Option.t = value`, with a reserved sentinel:
+When you supply a `none = ...` override, `Option.t = value` directly - no extra
+tag, no padding. You're reserving one specific value to mean "none":
 
 ```ocaml
 type token = int8# [@@deriving unboxed_option { none = #0s }]
-(* Option.t    = int8# *)
-(* Option.none = #0s   *)
-(* Option.some is the identity *)
-```
-
-### Sentinel via `sentinel = true`
-
-Uses a synthesized default sentinel (NaN for floats; not available for integer types):
-
-```ocaml
-type token = float# [@@deriving unboxed_option { sentinel = true }]
+(* Option.none = #0s; Option.some is the identity *)
 ```
 
 ## Record examples
 
-Full sentinel override:
-
-```ocaml
-type packed_pair = #{ x : int8#; y : int32# }
-[@@deriving unboxed_option { none = #{ x = #12s; y = #0l } }]
-```
-
-Partial override - the listed fields are the `is_none` discriminators; omitted
-fields are payload-only:
-
-```ocaml
-type packed_pair = #{ x : int8#; y : float# }
-[@@deriving unboxed_option { none = #{ x = #15s } }]
-(* synthesized none = #{ x = #15s; y = Float_u.nan () } *)
-(* is_none v = (v.#x = #15s) - y can be anything *)
-(* #{ x = #15s; y = #7.0 } is none *)
-(* #{ x = #1s;  y = nan }  is some *)
-```
-
-This means **write only the field that discriminates and you get a single
-typed compare**. Use a full override to check every field:
+For records, write `none = #{ ... }`. Listed fields are `is_none`
+discriminators; omitted fields are payload-only and `is_none` doesn't inspect
+them. A single discriminator gives the simplest, fastest predicate.
 
 ```ocaml
 type packed_pair = #{ x : int8#; y : int32# }
@@ -117,68 +98,59 @@ type packed_pair = #{ x : int8#; y : int32# }
 (* is_none v = (v.#x = #12s) && (v.#y = #0l) - both must match *)
 ```
 
-Override on an opaque field - any field whose type isn't a recognised scalar
-or contract `M.t` works in sentinel mode as long as the user provides its
-sentinel value. The opaque field is compared with `Stdlib.( = )` (polymorphic
-equality), which is fine for primitive immediates and small structural values
-but lowers to `caml_equal` for arrays / nested records:
+```ocaml
+type packed_pair = #{ x : int8#; y : float# }
+[@@deriving unboxed_option { none = #{ x = #15s } }]
+(* is_none v = (v.#x = #15s); y can be anything - including nan *)
+```
+
+Opaque fields (anything that isn't a recognised scalar, immediate, or contract
+type) are allowed too - omit them (payload-only) or list them (compared with
+`Stdlib.( = )`):
 
 ```ocaml
 type record = #{ id : int; tag : string }
 [@@deriving unboxed_option { none = #{ id = -1 } }]
-(* synthesized none.#tag = (Stdlib.Obj.magic 0 : string), never observed *)
-(* is_none v = (v.#id = -1) - tag is payload-only *)
+(* is_none v = (Stdlib.Int.equal v.#id (-1)); tag is payload-only *)
 ```
-
-If a discriminator's field type is an immediate (`int`, `bool`, `char`) or
-unboxed scalar (`int#`, `float#`, etc.), the generated `is_none` is statically
-`[@@zero_alloc]`. Multi-field overrides that include an opaque structural type
-(e.g. an `int array`) fall back to `caml_equal` which the static checker can't
-verify - prefer a single-field discriminator on a primitive when you want
-guaranteed zero-alloc.
 
 ## Contract fields
 
-A record field of type `M.t` is supported when the generated code can satisfy this
-contract:
+A field typed `M.t` is supported when `M.Option` provides the right interface.
+This lets you nest types that already have their own `Option` module without
+re-deriving.
 
 ```ocaml
-M.Option.none            : M.Option.t
-M.Option.unchecked_value : M.Option.t -> M.t
+val M.Option.none         : M.Option.t
+val M.Option.unsafe_value : M.Option.t -> M.t
+val M.Option.is_none      : M.t -> bool   (* required only in sentinel mode *)
 ```
 
-In sentinel-backed record mode, `is_none` also requires:
+When `M` is itself `[@@deriving unboxed_option]`, this is automatic:
 
 ```ocaml
-M.Option.is_none : M.t -> bool
-```
-
-Example:
-
-```ocaml
-module Foo = struct
-  type t = float#
-  module Option = struct
-    type value = t
-    type t = #(bool * value)
-    let none = #(false, Float_u.nan ())
-    let unchecked_value = function #(_, v) -> v
-  end
+module Inner = struct
+  type t = float# [@@deriving unboxed_option]
 end
 
-type record = #{ x : Foo.t } [@@deriving unboxed_option]
+module Outer = struct
+  type t = #{ inner : Inner.t; count : int# }
+  [@@deriving unboxed_option]
+end
 ```
 
-## Guidance
+For types that don't derive `unboxed_option`, hand-roll a compatible module (see
+[test/test_contract_field.ml](./test/test_contract_field.ml) for a worked
+example with a custom float wrapper).
 
-- **Tagged mode** - explicit semantics; correctness does not depend on a reserved sentinel.
-- **`none = ...`** - compact representation when a specific value can be safely reserved.
-  Listed fields are the `is_none` discriminators; omitted fields are payload-only.
-- **`sentinel = true`** - sentinel-backed with synthesized defaults (floats only). For
-  records this checks every field against its synthesized default; use it when every
-  field is genuinely a discriminator.
-- **Single-field discriminator** - the simplest path for records: write
-  `none = #{ id = ... }` naming just the discriminator. `is_none` becomes one typed
-  compare and is statically `[@@zero_alloc]`.
+## Aliases
+
+`type t = M.t [@@deriving unboxed_option]` re-exports `M.Option` under the new
+name. The alias path doesn't take a `none = ...` (delegation only).
+
+```ocaml
+type my_token = Some_module.t [@@deriving unboxed_option]
+(* My_token.Option.t = Some_module.Option.t, all functions delegate. *)
+```
 
 See [test/](./test/) for more examples.

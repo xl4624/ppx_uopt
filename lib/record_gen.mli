@@ -9,6 +9,12 @@ val contract_payload_name : string -> string
 (** Generated local binding name for a delegated contract field's [Option.is_none]. *)
 val contract_is_none_name : string -> string
 
+(** Type-specialised equality function for an immediate field. *)
+val immediate_equal_fn : loc:location -> Uopt_types.immediate_kind -> expression
+
+(** Default never-observed value for an immediate field omitted from a sentinel override. *)
+val immediate_default_expr : loc:location -> Uopt_types.immediate_kind -> expression
+
 (** Parse [none = #{ ... }] overrides for an unboxed record.
 
     Returns the explicitly provided field expressions as [(field_name, expr)] pairs.
@@ -23,8 +29,10 @@ val unboxed_record_none_overrides
 (** Build the synthesized record sentinel used for [Option.none].
 
     Explicitly overridden fields use their provided expressions. Omitted scalar fields use
-    their scalar default sentinel, and omitted contract fields reuse the payload extracted
-    from the field contract's own [Option.none]. *)
+    their scalar default sentinel, omitted contract fields reuse the payload extracted
+    from the field contract's own [Option.none], omitted immediate fields use a literal
+    default, and omitted opaque fields fall back to a never-observed [Obj.magic 0]
+    placeholder. Omitted fields are payload-only - [is_none] does not inspect them. *)
 val gen_unboxed_record_none
   :  loc:location
   -> label_declaration list
@@ -54,11 +62,10 @@ val unboxed_record_is_none_uses_poly_eq
 
 (** Build the [is_none] predicate for a sentinel-backed unboxed record.
 
-    Every field is checked against that field's sentinel. With a partial [none = #{ ... }]
-    override, explicitly listed fields use the override while omitted fields still use
-    their synthesized default sentinels. Opaque fields (neither a recognised scalar nor a
-    contract [M.t]) are only allowed when the user supplies an override; they are then
-    compared with [Stdlib.( = )]. *)
+    Only fields listed in [none = #{ ... }] are checked: the predicate is the conjunction
+    of per-field equality tests against the user-supplied sentinel value. Omitted fields
+    are payload-only and may freely take any value. Immediate fields ([int]/[bool]/[char])
+    use type-specialised equality; opaque fields use [Stdlib.( = )]. *)
 val gen_unboxed_record_is_none_sentinel
   :  loc:location
   -> label_declaration list

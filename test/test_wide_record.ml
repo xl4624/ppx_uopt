@@ -1,11 +1,10 @@
 open Test_helpers
 open! Float_u
 
-(* Five-field record with a partial none override.
-   Only the listed fields (a, b, c) gate is_none; the omitted float fields
-   d and e are payload-only and may take any value. The synthesised [none]
-   still has [Float_u.nan ()] in d/e so the constant is well-formed, but
-   that placeholder is never inspected. *)
+(* Five-field record with a partial none override. Only the listed fields (a, b, c) gate
+   is_none; the omitted float fields d and e are payload-only and may take any value. The
+   synthesised [none] still has [Float_u.nan ()] in d/e so the constant is well-formed,
+   but that placeholder is never inspected. *)
 
 module Wide = struct
   type t =

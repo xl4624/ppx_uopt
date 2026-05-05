@@ -1,9 +1,7 @@
 open! Float_u
 
-(* Three levels of tagged option nesting:
-   Outer.t = #{ m: Middle.t; c: float# }
-   Middle.t = #{ a: Inner.t; b: float# }
-   Inner.t  = float# *)
+(* Three levels of tagged option nesting: Outer.t = #[{ m: Middle.t; c: float# }] Middle.t
+   = #[{ a: Inner.t; b: float# }] Inner.t = float# *)
 
 module Inner = struct
   type t = float# [@@deriving unboxed_option]
@@ -30,12 +28,12 @@ let () =
   assert (Middle.Option.is_none Middle.Option.none);
   assert (Outer.Option.is_none Outer.Option.none);
   (* NaN propagates through the default payload at every level *)
-  let outer_payload = Outer.Option.unchecked_value Outer.Option.none in
+  let outer_payload = Outer.Option.unsafe_value Outer.Option.none in
   let m = outer_payload.#m in
   assert (Float_u.is_nan m.#a);
   assert (Float_u.is_nan m.#b);
   assert (Float_u.is_nan outer_payload.#c);
-  let mid_payload = Middle.Option.unchecked_value Middle.Option.none in
+  let mid_payload = Middle.Option.unsafe_value Middle.Option.none in
   assert (Float_u.is_nan mid_payload.#a);
   assert (Float_u.is_nan mid_payload.#b);
   (* some/value_exn round-trip through all three levels *)

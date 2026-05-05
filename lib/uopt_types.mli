@@ -26,18 +26,34 @@ type scalar_kind =
 (** Total ordering on [scalar_kind], used by generated code and tests. *)
 val compare_scalar_kind : scalar_kind -> scalar_kind -> int
 
+(** Boxed-OCaml types with a typed primitive equality function ({!Stdlib.Int.equal} etc.).
+    Treated specially because their equality is verified zero-alloc, and because [Imm_float]
+    additionally gets NaN-detection: an override of [Float.nan] generates [Float.is_nan]
+    rather than [Float.equal] (which is always [false] against NaN by IEEE 754). *)
+type immediate_kind =
+  | Imm_int
+  | Imm_bool
+  | Imm_char
+  | Imm_float
+
 (** Classification of a field in an unboxed record payload. *)
 type record_field_kind =
   | Record_field_scalar of scalar_kind
   (** A field whose representation is generated directly by this deriver. *)
   | Record_field_contract of Longident.t
   (** A field delegated to an existing [M.Option] contract for [M.t]. *)
+  | Record_field_immediate of immediate_kind
+  (** A field whose type is an OCaml immediate ([int], [bool], [char]). [is_none] uses the
+      type-specialised [Int.equal]/[Bool.equal]/[Char.equal] which is statically verified
+      zero-alloc. *)
   | Record_field_opaque of core_type
-  (** A field whose type is neither a recognised unboxed scalar nor an [M.t] contract. The
-      carried [core_type] is the field's original syntactic type expression. Tagged-mode
-      codegen materialises a placeholder via [(Stdlib.Obj.magic 0 : <core_type>)] - safe
-      for value-layout fields because the payload is never observed by [is_none]. Sentinel
-      mode rejects this kind because it has no equality function to compare against. *)
+  (** A field whose type is neither a recognised unboxed scalar, immediate, nor an [M.t]
+      contract. The carried [core_type] is the field's original syntactic type expression.
+      Tagged-mode codegen materialises a placeholder via
+      [(Stdlib.Obj.magic 0 : <core_type>)] - safe for value-layout fields because the
+      payload is never observed by [is_none]. In sentinel mode the field may appear in the
+      [none = #{ ... }] override (compared with [Stdlib.( = )]) or be omitted, in which
+      case it is payload-only. *)
 
 (** Classification of the payload portion of a type declaration (excludes aliases). *)
 type payload_type_info =
