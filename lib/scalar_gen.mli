@@ -41,8 +41,20 @@ val is_none_body
 (** Build an expression that converts a scalar value to [Sexplib0.Sexp.t]. *)
 val sexp_of_value_expr : loc:location -> scalar_kind -> expression -> expression
 
-(** Helper definitions required by generated scalar option modules for [kind].
+(** Primitive externals requested by a scalar kind. Kept as an opaque enum so that callers
+    aggregating across multiple kinds (e.g. an unboxed record with both [int8#] and
+    [char#] fields) can deduplicate shared primitives like [_uopt_equal_int8]. *)
+type primitive
 
-    This emits primitives only for scalar kinds that need extra support code, such as
-    unboxed [int#], [int8#], [int16#], and [char#]. *)
-val helper_items : loc:location -> scalar_kind -> structure_item list
+(** Total ordering on [primitive], used by callers to deduplicate via [List.sort_uniq]. *)
+val compare_primitive : primitive -> primitive -> int
+
+(** Emit the [external] declaration for a primitive. *)
+val primitive_item : loc:location -> primitive -> structure_item
+
+(** Primitives needed by generated code for [kind]. *)
+val primitives_for_kind : scalar_kind -> primitive list
+
+(** Non-primitive helper bindings (regular [let]s) needed by generated code for [kind].
+    These do not need deduplication: each kind's extras are unique to that kind. *)
+val extra_bindings : loc:location -> scalar_kind -> structure_item list

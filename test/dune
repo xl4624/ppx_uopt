@@ -30,7 +30,8 @@
   test_record_opaque_sentinel
   test_immediate_only
   test_alias
-  test_nan_sentinel)
+  test_nan_sentinel
+  test_record_int8_char)
  (libraries unboxed test_helpers)
  (flags
   (:standard -w -32-34))

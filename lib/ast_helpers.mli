@@ -5,17 +5,11 @@
 
 open Ppxlib
 
-(** Attach [@inline] and [@zero_alloc] to a generated expression. *)
-val add_inline_zero_alloc : loc:location -> expression -> expression
-
-(** Attach [@inline] and [@zero_alloc assume] to a generated expression. The [assume]
+(** Build a value binding named [name], automatically marking the body [@inline] and
+    [@zero_alloc] (or [@zero_alloc assume] when [assume_zero_alloc] is true). The [assume]
     variant tells the checker to trust the annotation rather than verify it; used for
     bodies whose actual runtime cost is zero-alloc but whose static analysis isn't (e.g.
     [Stdlib.( = )] which lowers to [caml_equal]). *)
-val add_inline_zero_alloc_assume : loc:location -> expression -> expression
-
-(** Build a value binding named [name], automatically marking the body [@inline] and
-    [@zero_alloc] (or [@zero_alloc assume] when [assume_zero_alloc] is true). *)
 val mk_val_binding
   :  ?assume_zero_alloc:bool
   -> loc:location
@@ -23,20 +17,22 @@ val mk_val_binding
   -> expression
   -> value_binding
 
-(** [fun_one ~arg_name body] builds [fun arg_name -> body]. *)
-val fun_one : loc:location -> string -> expression -> expression
+(** Emit [let name = body] as a top-level non-recursive structure item, with no extra
+    attributes. *)
+val let_def : loc:location -> string -> expression -> structure_item
 
-(** [fun_t_default body] builds [fun t ~default -> body]. *)
-val fun_t_default : loc:location -> expression -> expression
+(** Like {!let_def} but binds an arbitrary pattern, used for bindings that need a type
+    ascription. *)
+val let_def_pat : loc:location -> pattern -> expression -> structure_item
 
-(** Identifier expression for a local variable. *)
-val evar : loc:location -> string -> expression
-
-(** Apply [f] to unlabeled arguments [args]. *)
-val eapply : loc:location -> expression -> expression list -> expression
-
-(** Negate a boolean expression with [not]. *)
-val enot : loc:location -> expression -> expression
+(** Like {!let_def}, but additionally marks the body [@inline] and [@zero_alloc] (see
+    {!mk_val_binding} for the [assume_zero_alloc] flag). *)
+val let_inline
+  :  ?assume_zero_alloc:bool
+  -> loc:location
+  -> string
+  -> expression
+  -> structure_item
 
 (** The tagged representation type [#(bool * value)]. *)
 val tagged_option_type : loc:location -> core_type
@@ -47,33 +43,22 @@ val tagged_none_expr : loc:location -> expression -> expression
 (** Tagged [some] expression [#(true, payload)]. *)
 val tagged_some_expr : loc:location -> expression -> expression
 
-(** Qualified identifier expression from path components such as [["Float_u"; "nan"]]. *)
-val eqident : loc:location -> string list -> expression
-
-(** Qualified identifier expression formed by extending an existing [Longident.t]. *)
-val eqident_lid : loc:location -> Longident.t -> string list -> expression
+(** Qualified identifier expression formed by extending an existing [Longident.t]. For
+    static paths, prefer [Ppxlib.Ast_builder.Default.evar ~loc "A.B.c"] which parses the
+    dot-separated string. *)
+val qual_evar : loc:location -> Longident.t -> string list -> expression
 
 (** Convert boxed numeric and character constants into their unboxed literal forms when
     possible. Non-constant expressions are returned unchanged. *)
 val to_unboxed_constant_expr : loc:location -> expression -> expression
 
-(** Primitive declaration helper used for generated support bindings. *)
-val primitive_sig : loc:location -> string -> core_type -> string -> structure_item
-
 (** Build [(Stdlib.Obj.magic 0 : <field_type>)] for use as a never-observed placeholder
     payload in opaque value-layout fields. *)
 val opaque_default_payload_expr : loc:location -> core_type -> expression
 
-(** Render a [Longident.t] for diagnostics. *)
-val string_of_longident : Longident.t -> string
-
 (** True iff [expr] is a syntactic identifier reference matching one of [paths] (e.g.
     ["Float_u.nan"]). Used by NaN detection in float-kind sentinel overrides. *)
-val expr_is_qualified_ident
-  :  loc:location
-  -> expression
-  -> string list
-  -> bool
+val expr_is_qualified_ident : loc:location -> expression -> string list -> bool
 
 (** [@alloc a @ m = (heap @ global, stack @ local)] template attribute. *)
 val alloc_heap_stack_attr : loc:location -> attribute

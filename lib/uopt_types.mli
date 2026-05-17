@@ -27,9 +27,10 @@ type scalar_kind =
 val compare_scalar_kind : scalar_kind -> scalar_kind -> int
 
 (** Boxed-OCaml types with a typed primitive equality function ({!Stdlib.Int.equal} etc.).
-    Treated specially because their equality is verified zero-alloc, and because [Imm_float]
-    additionally gets NaN-detection: an override of [Float.nan] generates [Float.is_nan]
-    rather than [Float.equal] (which is always [false] against NaN by IEEE 754). *)
+    Treated specially because their equality is verified zero-alloc, and because
+    [Imm_float] additionally gets NaN-detection: an override of [Float.nan] generates
+    [Float.is_nan] rather than [Float.equal] (which is always [false] against NaN by IEEE
+    754). *)
 type immediate_kind =
   | Imm_int
   | Imm_bool
