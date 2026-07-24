@@ -55,9 +55,15 @@ extension, if you use it.
 Scalars: `float#`, `float32#`, `int32#`, `int64#`, `nativeint#`, `int8#`,
 `int16#`, `int#`, `char#`.
 
+Unboxed tuples of scalars, e.g. `#(int8# * float#)` (see [Unboxed-tuple
+payloads](#unboxed-tuple-payloads)).
+
 Unboxed records, with any mix of scalars, immediates (`int`, `bool`, `char`,
 `float`), contract types `M.t` (see [Contract fields](#contract-fields)), or any
-other value-layout field.
+other value-layout field. A field whose type is syntactically an unboxed tuple
+is rejected with a clear error instead: it isn't value-layout, so it can't
+stand in for the placeholder tagged mode needs. Give it a name via its own
+`[@@deriving unboxed_option]` type and use it as a contract field instead.
 
 ## Representations
 
@@ -113,6 +119,31 @@ type record = #{ id : int; tag : string }
 [@@deriving unboxed_option { none = #{ id = -1 } }]
 (* is_none v = (Stdlib.Int.equal v.#id (-1)); tag is payload-only *)
 ```
+
+## Unboxed-tuple payloads
+
+`type t = #(ty1 * ty2 * ...)` works like a scalar payload, generalized to
+several components. There are no field names, so - unlike unboxed records -
+there's no partial override: a `none = #( ... )` sentinel must supply every
+component, and every component is always an `is_none` discriminator.
+
+```ocaml
+type packed_pair = #(int8# * int32#)
+[@@deriving unboxed_option { none = #(#12s, #0l) }]
+(* is_none v = match v with #(x, y) -> x = #12s && y = #0l - both must match *)
+```
+
+Tagged mode (no override) works the same way as for scalars and records:
+
+```ocaml
+type packed_pair = #(int8# * char#)
+[@@deriving unboxed_option]
+(* Option.t = #(bool * #(int8# * char#)) *)
+```
+
+Components must all be recognised unboxed scalars; a mix of scalar, immediate,
+or contract components isn't supported - use an unboxed record instead, which
+also gives you field names and partial overrides.
 
 ## Contract fields
 

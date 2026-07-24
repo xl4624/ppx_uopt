@@ -1,10 +1,7 @@
 open Ppxlib
 open Uopt_types
 
-(* Recognise either an unqualified type constructor [Lident "x"] or a
-   single-module-qualified one [Ldot (Lident "M", "x")] with no type args. Returns the
-   path as a dotted string for table lookup. Deeper qualifications (e.g. [A.B.t]) fall
-   through to [None]. *)
+(* Deeper qualifications (e.g. [A.B.t]) fall through to [None]. *)
 let nullary_constr_path (ct : core_type) : string option =
   match Ppxlib_jane.Shim.Core_type_desc.of_parsetree ct.ptyp_desc with
   | Ptyp_constr ({ txt = Lident s; _ }, []) -> Some s
@@ -42,7 +39,31 @@ let module_t_base (ct : core_type) =
   | _ -> None
 ;;
 
-let classify_record_field ~loc:_ (ld : label_declaration) =
+let unsupported_tuple_component ~loc =
+  Location.raise_errorf
+    ~loc
+    "ppx_uopt: unboxed-tuple components must all be recognised unboxed scalars (float#, \
+     float32#, int32#, int64#/bits64, nativeint#, int8#, int16#, int#, char#); for a mix \
+     of scalar, immediate, or contract components, use an unboxed record instead."
+;;
+
+(* Labeled components (e.g. [#(x:int# * y:float#)]) are rejected: nothing downstream has a
+   name to address them by, so a label would be silently dropped. *)
+let unboxed_tuple_scalar_kinds ~loc (ct : core_type) =
+  match Ppxlib_jane.Shim.Core_type_desc.of_parsetree ct.ptyp_desc with
+  | Ptyp_unboxed_tuple components ->
+    Some
+      (List.map
+         (fun (label, comp_ct) ->
+           if Option.is_some label then unsupported_tuple_component ~loc;
+           match scalar_kind_of_core_type comp_ct with
+           | Some kind -> kind
+           | None -> unsupported_tuple_component ~loc)
+         components)
+  | _ -> None
+;;
+
+let classify_record_field ~loc (ld : label_declaration) =
   match scalar_kind_of_core_type ld.pld_type with
   | Some kind -> Record_field_scalar kind
   | None ->
@@ -51,9 +72,17 @@ let classify_record_field ~loc:_ (ld : label_declaration) =
      | None ->
        (match module_t_base ld.pld_type with
         | Some base -> Record_field_contract base
-        (* Anything else is treated as an opaque value-layout field. Tagged mode
-           synthesises a placeholder via [Stdlib.Obj.magic 0]. *)
-        | None -> Record_field_opaque ld.pld_type))
+        | None ->
+          (match Ppxlib_jane.Shim.Core_type_desc.of_parsetree ld.pld_type.ptyp_desc with
+           | Ptyp_unboxed_tuple _ ->
+             Location.raise_errorf
+               ~loc
+               "ppx_uopt: unboxed-record field '%s' has an unboxed-tuple type, which is \
+                not value-layout and so can't be used as an opaque placeholder field. \
+                Give it a name via its own [@@deriving unboxed_option] type and use it \
+                as an M.t contract field instead."
+               ld.pld_name.txt
+           | _ -> Record_field_opaque ld.pld_type)))
 ;;
 
 let detect_type_info ~loc (td : type_declaration) =
@@ -66,15 +95,19 @@ let detect_type_info ~loc (td : type_declaration) =
          ~loc
          "ppx_uopt: abstract type with no manifest is not supported"
      | Some ct ->
-       (match scalar_kind_of_core_type ct, module_t_base ct with
-        | Some kind, _ -> Payload (Scalar kind)
-        | None, Some base -> Alias base
-        | None, None ->
-          Location.raise_errorf
-            ~loc
-            "ppx_uopt: unsupported type. Supported types are unboxed scalars (float#, \
-             float32#, int32#, int64#/bits64, nativeint#, int8#, int16#, int#, char#), \
-             unboxed records, and module-qualified aliases of the form M.t."))
+       (match unboxed_tuple_scalar_kinds ~loc ct with
+        | Some kinds -> Payload (Unboxed_tuple kinds)
+        | None ->
+          (match scalar_kind_of_core_type ct, module_t_base ct with
+           | Some kind, _ -> Payload (Scalar kind)
+           | None, Some base -> Alias base
+           | None, None ->
+             Location.raise_errorf
+               ~loc
+               "ppx_uopt: unsupported type. Supported types are unboxed scalars (float#, \
+                float32#, int32#, int64#/bits64, nativeint#, int8#, int16#, int#, \
+                char#), unboxed tuples of scalars, unboxed records, and module-qualified \
+                aliases of the form M.t.")))
   | _ ->
     Location.raise_errorf
       ~loc

@@ -18,8 +18,6 @@ type repr_bodies =
   ; unsafe_value : expression (* [fun t -> ...] *)
   }
 
-(* ===== shared shape helpers ===== *)
-
 let abstract_type_decl ~loc name manifest =
   type_declaration
     ~loc
@@ -76,8 +74,6 @@ let let_template ~loc ~name ~arg ~body =
   pstr_template ~loc (pstr_value ~loc Nonrecursive [ vb ])
 ;;
 
-(* ===== generated boilerplate ===== *)
-
 (* The generated [Option] module emits boilerplate that callers may not touch:
 
    - -32 silences the templated heap/stack copies of [sexp_of_t]/[sexp_of_value]
@@ -128,14 +124,9 @@ let optional_syntax_mod ~loc ~assume_zero_alloc =
     ]
 ;;
 
-(* Mode selection: an explicit [none = ...] override switches to the sentinel
-   representation (Option.t = value, [Option.none] is the user's reserved value);
-   otherwise we fall back to the tagged representation [#(bool * value)]. *)
 let repr_kind_of_options ~none_override =
   if Option.is_some none_override then Sentinel_repr else Tagged_repr
 ;;
-
-(* ===== signature ===== *)
 
 let gen_sig_items ~loc ~type_name ~t_typ =
   let sexp_typ = [%type: Sexplib0.Sexp.t] in
@@ -171,8 +162,6 @@ let gen_sig_items ~loc ~type_name ~t_typ =
   ]
 ;;
 
-(* ===== payload-shaped helpers ===== *)
-
 let default_payload_for_field ~loc (ld : label_declaration) =
   match classify_record_field ~loc ld with
   | Record_field_scalar kind -> Scalar_gen.default_payload_expr ~loc kind
@@ -184,6 +173,10 @@ let default_payload_for_field ~loc (ld : label_declaration) =
 
 let default_payload_expr ~loc = function
   | Scalar kind -> Scalar_gen.default_payload_expr ~loc kind
+  | Unboxed_tuple kinds ->
+    pexp_unboxed_tuple
+      ~loc
+      (List.map (fun kind -> None, Scalar_gen.default_payload_expr ~loc kind) kinds)
   | Unboxed_record labels ->
     let fields =
       List.map
@@ -197,23 +190,24 @@ let default_payload_expr ~loc = function
 let sentinel_none_expr ~loc ~type_info ~none_override =
   match type_info with
   | Scalar kind -> Scalar_gen.none_expr ~loc ~kind ~none_override
+  | Unboxed_tuple kinds -> Tuple_gen.gen_unboxed_tuple_none ~loc kinds ~none_override
   | Unboxed_record labels -> Record_gen.gen_unboxed_record_none ~loc labels ~none_override
 ;;
 
 let sentinel_is_none_body ~loc ~type_info ~none_override t_expr =
   match type_info with
   | Scalar kind -> Scalar_gen.is_none_body ~loc ~kind ~none_override t_expr
+  | Unboxed_tuple kinds ->
+    Tuple_gen.gen_unboxed_tuple_is_none ~loc kinds ~none_override t_expr
   | Unboxed_record labels ->
     Record_gen.gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr
 ;;
 
-(* Emit primitive externals + extra per-kind bindings for every scalar kind appearing in
-   [info]. Primitives are deduplicated globally so kinds that share a primitive (e.g.
-   [int8#] and [char#] both want [_uopt_equal_int8]) declare it only once. *)
 let helper_items ~loc info =
   let kinds =
     match info with
     | Scalar kind -> [ kind ]
+    | Unboxed_tuple kinds -> kinds
     | Unboxed_record labels ->
       labels
       |> List.filter_map (fun ld ->
@@ -233,7 +227,7 @@ let helper_items ~loc info =
 ;;
 
 let contract_items ~loc ~repr_kind = function
-  | Scalar _ -> []
+  | Scalar _ | Unboxed_tuple _ -> []
   | Unboxed_record labels ->
     let need_is_none =
       match repr_kind with
@@ -261,8 +255,7 @@ let sexp_of_field ~loc ld field_access =
     in
     [%expr Sexplib0.Sexp.Atom [%e str]]
   | Record_field_opaque _ ->
-    (* No type-aware sexp converter is available. Touch the field to keep the expression
-       well-typed, then emit an opaque placeholder. *)
+    (* No type-aware sexp converter is available; touch the field to keep it well-typed. *)
     [%expr
       let _ = [%e field_access] in
       Sexplib0.Sexp.Atom "<opaque>"]
@@ -270,6 +263,8 @@ let sexp_of_field ~loc ld field_access =
 
 let sexp_of_value_body ~loc = function
   | Scalar kind -> Scalar_gen.sexp_of_value_expr ~loc kind (evar ~loc "v")
+  | Unboxed_tuple kinds ->
+    Tuple_gen.gen_unboxed_tuple_sexp_of_value ~loc kinds (evar ~loc "v")
   | Unboxed_record labels ->
     let field_sexps =
       List.map
@@ -296,20 +291,16 @@ let sexp_of_t_body ~loc =
     else Sexplib0.Sexp.List [ [%e sexp_of_value] (unsafe_value v) ]]
 ;;
 
-(* ===== option module body for a payload type ===== *)
-
 let gen_str_option ~loc ~type_name ~type_info ~none_override =
   let repr_kind = repr_kind_of_options ~none_override in
-  (* When sentinel-mode [is_none] falls back to polymorphic equality on an opaque field,
-     the body lowers to [caml_equal] which the static [@@zero_alloc] checker
-     conservatively treats as potentially-allocating. Use [@@zero_alloc assume] on
-     [is_none] and the transitive callers ([is_some], [value], [value_exn], and
-     [Optional_syntax.is_none]) so callers continue to see them as zero-alloc. *)
+  (* [caml_equal] (from a poly-eq opaque-field discriminator) defeats the static
+     [@@zero_alloc] checker, so those cases fall back to [@@zero_alloc assume]. *)
   let assume_zero_alloc =
     match repr_kind, type_info with
     | Sentinel_repr, Unboxed_record labels ->
       Record_gen.unboxed_record_is_none_uses_poly_eq ~loc labels ~none_override
-    | Sentinel_repr, Scalar _ | Tagged_repr, (Scalar _ | Unboxed_record _) -> false
+    | Sentinel_repr, (Scalar _ | Unboxed_tuple _)
+    | Tagged_repr, (Scalar _ | Unboxed_tuple _ | Unboxed_record _) -> false
   in
   let raise_match = raise_match ~loc ~type_name in
   let b =
@@ -329,8 +320,8 @@ let gen_str_option ~loc ~type_name ~type_info ~none_override =
       }
     | Tagged_repr ->
       { t_manifest = tagged_option_type ~loc
-      ; none = tagged_none_expr ~loc (default_payload_expr ~loc type_info)
-      ; some = [%expr fun v -> [%e tagged_some_expr ~loc [%expr v]]]
+      ; none = [%expr #(false, [%e default_payload_expr ~loc type_info])]
+      ; some = [%expr fun v -> #(true, v)]
       ; is_none =
           [%expr
             fun t ->
@@ -392,15 +383,12 @@ let gen_sig_option ~loc ~type_name ~none_override =
        | Tagged_repr -> tagged_option_type ~loc)
 ;;
 
-(* ===== alias of an existing M with [@@deriving unboxed_option] ===== *)
-
 let m_option_t ~loc base =
   ptyp_constr ~loc (Located.mk ~loc (Ldot (Ldot (base, "Option"), "t"))) []
 ;;
 
 let gen_str_alias ~loc ~type_name ~base =
   let m_option name = qual_evar ~loc base [ "Option"; name ] in
-  (* [let foo = fun t -> M.Option.foo t], for the eta-expanded delegating bindings below. *)
   let delegate name = let_inline ~loc name [%expr fun t -> [%e m_option name] t] in
   let template_via name arg =
     let_template
@@ -433,8 +421,6 @@ let gen_str_alias ~loc ~type_name ~base =
 let gen_sig_alias ~loc ~type_name ~base =
   gen_sig_items ~loc ~type_name ~t_typ:(m_option_t ~loc base)
 ;;
-
-(* ===== plumbing ===== *)
 
 let args () = Deriving.Args.(empty +> arg "none" Ast_pattern.__)
 

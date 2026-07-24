@@ -75,8 +75,6 @@ let none_for_unoverridden_field ~loc ld =
          (Scalar_gen.kind_name kind))
   | Record_field_contract _ -> evar ~loc (contract_payload_name field_name)
   | Record_field_immediate imm -> immediate_default_expr ~loc imm
-  (* Opaque field omitted from the override is payload-only: [is_none] never inspects it,
-     so any well-typed placeholder works. *)
   | Record_field_opaque field_type -> opaque_default_payload_expr ~loc field_type
 ;;
 
@@ -123,10 +121,6 @@ let contract_helper_items ~loc labels ~need_is_none =
     | Record_field_scalar _ | Record_field_immediate _ | Record_field_opaque _ -> [])
 ;;
 
-(* True iff the sentinel-mode [is_none] for these labels would use [Stdlib.( = )] on an
-   opaque field. Such uses lower to [caml_equal], which the static [@zero_alloc] checker
-   conservatively treats as potentially-allocating, so callers emit [@@zero_alloc assume]
-   on the affected functions. *)
 let unboxed_record_is_none_uses_poly_eq ~loc labels ~none_override =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
   List.exists
@@ -164,9 +158,6 @@ let is_none_check_for_field ~loc t_expr override_exprs ld =
     [%expr Stdlib.( = ) [%e access] [%e override_expr]]
 ;;
 
-(* [is_none] checks only the fields the user listed in [none = #{ ... }]. Fields omitted
-   from the override are payload-only and may freely take any value. Each listed field
-   acts as a sentinel discriminator. *)
 let gen_unboxed_record_is_none_sentinel ~loc labels ~none_override t_expr =
   let override_exprs = unboxed_record_none_overrides ~loc none_override in
   List.iter

@@ -15,8 +15,7 @@ let kind_name = function
   | Char_u_scalar -> "char#"
 ;;
 
-(* [Stdlib_stable.<Mod>.min_int ()] - the small-int unboxed scalars expose [min_int] as a
-   nullary function rather than a value. *)
+(* The small-int unboxed scalars expose [min_int] as a nullary function, not a value. *)
 let stdlib_stable_min_int ~loc mod_name =
   eapply ~loc (evar ~loc ("Stdlib_stable." ^ mod_name ^ ".min_int")) [ [%expr ()] ]
 ;;
@@ -37,9 +36,7 @@ let none_override_expr ~loc kind expr =
   let expr = to_unboxed_constant_expr ~loc expr in
   match kind with
   | Int_u_scalar ->
-    (* [int#] has no direct constant syntax, so a tagged-int literal like [0] gets wrapped
-       via [%int#_of_int]. Any other expression is passed through and must already be of
-       type [int#]. *)
+    (* [int#] has no literal syntax; wrap a tagged-int constant via [%int#_of_int]. *)
     (match Ppxlib_jane.Shim.Expression_desc.of_parsetree expr.pexp_desc ~loc with
      | Pexp_constant c ->
        (match Ppxlib_jane.Shim.Constant.of_parsetree c with
@@ -107,8 +104,6 @@ let is_none_body ~loc ~kind ~none_override t_expr =
 
 let sexp_of_value_expr ~loc kind value_expr =
   let atom s = [%expr Sexplib0.Sexp.Atom [%e s]] in
-  (* Modules with their own [sexp_of_t] - delegate via the heap/stack alloc-var attribute
-     so the generated [sexp_of_value] matches its templated signature. *)
   let sexp_of_t_via mod_name =
     eapply ~loc (with_alloc_var ~loc (evar ~loc (mod_name ^ ".sexp_of_t"))) [ value_expr ]
   in
@@ -133,9 +128,6 @@ let sexp_of_value_expr ~loc kind value_expr =
           ([%e evar ~loc "Stdlib_stable.Char_u.to_char"] [%e value_expr])]
 ;;
 
-(* Primitive externals requested by individual scalar kinds. Kept as an enum so the
-   aggregator in [Ppx_uopt] can dedup across the kinds appearing in an unboxed record
-   (e.g. [int8#] and [char#] both want [_uopt_equal_int8]). *)
 type primitive =
   | Equal_int8
   | Equal_int16
@@ -169,8 +161,6 @@ let primitives_for_kind = function
   | Char_u_scalar -> [ Equal_int8; Char_to_int8 ]
 ;;
 
-(* Non-primitive bindings (regular [let] definitions). Currently only [_uopt_equal_char]
-   needs one; everything else is exhausted by primitives. *)
 let extra_bindings ~loc = function
   | Float_u_scalar
   | Float32_u_scalar

@@ -1,8 +1,6 @@
-(** Internal classifications shared by the code generators.
-
-    These types normalize the subset of OxCaml types supported by
-    [@@deriving unboxed_option] so later stages can generate code without repeatedly
-    inspecting the parsetree. *)
+(** Classification ADTs shared by the code generators: normalize the subset of OxCaml
+    types supported by [@@deriving unboxed_option] so later stages don't repeatedly
+    inspect the parsetree. *)
 
 open Ppxlib
 
@@ -26,11 +24,10 @@ type scalar_kind =
 (** Total ordering on [scalar_kind], used by generated code and tests. *)
 val compare_scalar_kind : scalar_kind -> scalar_kind -> int
 
-(** Boxed-OCaml types with a typed primitive equality function ({!Stdlib.Int.equal} etc.).
-    Treated specially because their equality is verified zero-alloc, and because
-    [Imm_float] additionally gets NaN-detection: an override of [Float.nan] generates
-    [Float.is_nan] rather than [Float.equal] (which is always [false] against NaN by IEEE
-    754). *)
+(** Boxed OCaml types with a typed, statically zero-alloc primitive equality ([Int.equal]
+    etc.). [Imm_float] additionally gets NaN detection: an override of [Float.nan]
+    generates [Float.is_nan] rather than [Float.equal], which is always [false] against
+    NaN. *)
 type immediate_kind =
   | Imm_int
   | Imm_bool
@@ -40,30 +37,24 @@ type immediate_kind =
 (** Classification of a field in an unboxed record payload. *)
 type record_field_kind =
   | Record_field_scalar of scalar_kind
-  (** A field whose representation is generated directly by this deriver. *)
   | Record_field_contract of Longident.t
   (** A field delegated to an existing [M.Option] contract for [M.t]. *)
   | Record_field_immediate of immediate_kind
-  (** A field whose type is an OCaml immediate ([int], [bool], [char]). [is_none] uses the
-      type-specialised [Int.equal]/[Bool.equal]/[Char.equal] which is statically verified
-      zero-alloc. *)
   | Record_field_opaque of core_type
-  (** A field whose type is neither a recognised unboxed scalar, immediate, nor an [M.t]
-      contract. The carried [core_type] is the field's original syntactic type expression.
-      Tagged-mode codegen materialises a placeholder via
-      [(Stdlib.Obj.magic 0 : <core_type>)] - safe for value-layout fields because the
-      payload is never observed by [is_none]. In sentinel mode the field may appear in the
-      [none = #{ ... }] override (compared with [Stdlib.( = )]) or be omitted, in which
-      case it is payload-only. *)
+  (** Neither a scalar, immediate, nor [M.t] contract; carries the field's syntactic type.
+      Tagged mode materialises [(Stdlib.Obj.magic 0 : <core_type>)] - safe since the
+      payload is never observed by [is_none]. In sentinel mode the field may appear in
+      [none = #{ ... }] (compared with [Stdlib.( = )]) or be omitted, payload-only. *)
 
 (** Classification of the payload portion of a type declaration (excludes aliases). *)
 type payload_type_info =
   | Scalar of scalar_kind
-  (** A supported scalar manifest type such as [float#] or [int32#]. *)
+  | Unboxed_tuple of scalar_kind list
+  (** [#(ty1 * ty2 * ...)] of recognised scalars. No field names, so every component is
+      always an [is_none] discriminator and [none = #( ... )] must supply all of them. *)
   | Unboxed_record of label_declaration list
-  (** An unboxed record product whose fields are individually classified. *)
 
 (** Classification of the user-written type declaration being derived. *)
 type type_info =
   | Payload of payload_type_info
-  | Alias of Longident.t (** A type alias [type t = M.t] that delegates to [M.Option]. *)
+  | Alias of Longident.t (** [type t = M.t], which delegates to [M.Option]. *)

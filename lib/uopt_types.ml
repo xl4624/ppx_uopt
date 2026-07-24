@@ -31,6 +31,7 @@ type record_field_kind =
 
 type payload_type_info =
   | Scalar of scalar_kind
+  | Unboxed_tuple of scalar_kind list
   | Unboxed_record of label_declaration list
 
 type type_info =

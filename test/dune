@@ -31,7 +31,10 @@
   test_immediate_only
   test_alias
   test_nan_sentinel
-  test_record_int8_char)
+  test_record_int8_char
+  test_tuple_sentinel
+  test_tuple_tagged
+  test_tuple_sexp)
  (libraries unboxed test_helpers)
  (flags
   (:standard -w -32-34))
